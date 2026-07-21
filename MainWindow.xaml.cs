@@ -462,9 +462,8 @@ namespace CardCropperNet
                 }
 
                 ShowPage(0);
-                bool usedSelection = selectionOrder.Count(x => imageItems.Contains(x)) > 0;
-                // StatusText.Text = $"A4 拼版：{layoutPages.Count} 页（300 DPI，间隔 55mm）" +
-                                  (usedSelection ? "，按选中顺序配对" : "，按 1-2/3-4 顺序");
+                // StatusText.Text = $"A4 拼版：{layoutPages.Count} 页（300 DPI，间隔 55mm）"
+                //                   + (usedSelection ? "，按选中顺序配对" : "，按 1-2/3-4 顺序");
             }
             catch (Exception ex)
             {
