@@ -181,7 +181,7 @@
             </StackPanel>
 
             <TextBlock Grid.Row="3" x:Name="StatusText" Text=""
-                       HorizontalAlignment="Center" Margin="8" FontSize="12" Foreground="#555555"/>
+                       HorizontalAlignment="Center" Margin="8" FontSize="12" Foreground="#555555" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 右侧：工具栏 -->
@@ -200,8 +200,7 @@
                     </Border>
 
                     <!-- 一键裁剪 -->
-                    <Button Content="✂️ 一键裁剪" Click="AutoCrop_Click" Background="#4CAF50" Style="{StaticResource ColorActionButton}"/>
-                    <TextBlock x:Name="CropStatusText" Text="" Margin="4,4,4,12" FontSize="11" Foreground="#2E7D32" TextWrapping="Wrap"/>
+                    <Button Content="✂️ 一键裁剪" Click="AutoCrop_Click" Background="#4CAF50" Style="{StaticResource ColorActionButton}" Margin="0,0,0,16"/>
 
                     <!-- 🔥 明暗度调整（移除顶部说明文字） -->
                     <TextBlock Text="亮部" FontSize="11" Margin="4,4,4,0"/>
@@ -229,13 +228,12 @@
                     <Button Content="✔️ 应用调整" Click="ApplyAdjustments_Click" Background="#009688" Style="{StaticResource ColorActionButton}" Margin="0,0,0,20"/>
 
                     <!-- A4 拼版 -->
-                    <Button Content="📄 一键拼版" Click="AutoLayout_Click" Background="#2196F3" Style="{StaticResource ColorActionButton}"/>
-                    <TextBlock Text="未选中=按1-2/3-4顺序；选中=按选中顺序。正面上、反面下，间隔55mm" FontSize="10" Margin="4,4,4,16" Foreground="#777777" TextWrapping="Wrap"/>
+                    <Button Content="📄 一键拼版" Click="AutoLayout_Click" Background="#1976D2" Style="{StaticResource ColorActionButton}" Margin="0,0,0,16"/>
 
                     <!-- 导出打印 -->
-                    <Button Content="🖨️ 打印" Click="Print_Click" Background="#FF6F00" Style="{StaticResource ColorActionButton}" Margin="0,0,0,8"/>
-                    <Button Content="📄 导出 PDF" Click="ExportPdf_Click" Background="#1565C0" Style="{StaticResource ColorActionButton}" Margin="0,0,0,8"/>
-                    <Button Content="💾 导出图片" Click="ExportImage_Click" Background="#6A1B9A" Style="{StaticResource ColorActionButton}"/>
+                    <Button Content="🖨️ 打印" Click="Print_Click" Background="#F57C00" Style="{StaticResource ColorActionButton}" Margin="0,0,0,10"/>
+                    <Button Content="📄 导出 PDF" Click="ExportPdf_Click" Background="#0277BD" Style="{StaticResource ColorActionButton}" Margin="0,0,0,10"/>
+                    <Button Content="💾 导出图片" Click="ExportImage_Click" Background="#5E35B1" Style="{StaticResource ColorActionButton}"/>
                 </StackPanel>
             </ScrollViewer>
         </Border>

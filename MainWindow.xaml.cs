@@ -84,7 +84,7 @@ namespace CardCropperNet
                 item.GenerateThumbnail();
                 imageItems.Add(item);
                 UpdateIndices();
-                StatusText.Text = $"已添加 {imageItems.Count} 张图片";
+                // StatusText.Text = $"已添加 {imageItems.Count} 张图片";
             }
             catch (Exception ex)
             {
@@ -113,11 +113,11 @@ namespace CardCropperNet
             }
             else if (ImageListBox.SelectedItems.Count > 1)
             {
-                StatusText.Text = $"已选中 {ImageListBox.SelectedItems.Count} 张（操作只针对选中）";
+                // StatusText.Text = $"已选中 {ImageListBox.SelectedItems.Count} 张（操作只针对选中）";
             }
             else if (ImageListBox.SelectedItems.Count == 0)
             {
-                StatusText.Text = "";
+                // StatusText.Text = "";
             }
         }
 
@@ -176,13 +176,13 @@ namespace CardCropperNet
                 if (item.CroppedImage != null)
                 {
                     PreviewImage.Source = ImageItem.MatToBitmapSource(item.CroppedImage);
-                    StatusText.Text = $"预览：{item.FileName}（已裁剪，置信度 {item.Confidence:P0}）";
+                    // StatusText.Text = $"预览：{item.FileName}（已裁剪，置信度 {item.Confidence:P0}）";
                 }
                 else
                 {
                     var mat = CvInvoke.Imread(item.FilePath, Emgu.CV.CvEnum.ImreadModes.Color);
                     PreviewImage.Source = ImageItem.MatToBitmapSource(mat);
-                    StatusText.Text = $"预览：{item.FileName}（原图）";
+                    // StatusText.Text = $"预览：{item.FileName}（原图）";
                     mat.Dispose();
                 }
             }
@@ -231,7 +231,7 @@ namespace CardCropperNet
             try
             {
                 int baiduCount = 0, opencvCount = 0, manualCount = 0, failCount = 0;
-                CropStatusText.Text = "正在裁剪...";
+                // CropStatusText.Text = "正在裁剪...";
 
                 foreach (var item in targets)
                 {
@@ -302,7 +302,7 @@ namespace CardCropperNet
 
                     // 更新进度
                     var current = baiduCount + opencvCount + manualCount + failCount;
-                    CropStatusText.Text = $"处理中... {current}/{targets.Count}";
+                    // CropStatusText.Text = $"处理中... {current}/{targets.Count}";
                 }
 
                 // 汇总结果
@@ -312,7 +312,7 @@ namespace CardCropperNet
                 if (opencvCount > 0) summary += $"\n💻 本地识别：{opencvCount} 张";
                 if (manualCount > 0) summary += $"\n✋ 手动裁剪：{manualCount} 张";
                 if (failCount > 0) summary += $"\n❌ 跳过：{failCount} 张";
-                CropStatusText.Text = summary;
+                // CropStatusText.Text = summary;
 
                 if (currentItem != null) ShowPreview(currentItem);
             }
@@ -347,7 +347,7 @@ namespace CardCropperNet
                     currentItem.Confidence = 1.0;
                     currentItem.RefreshThumbnail();
                     ShowPreview(currentItem);
-                    CropStatusText.Text = "✅ 手动裁剪完成";
+                    // CropStatusText.Text = "✅ 手动裁剪完成";
                 }
 
                 if (currentItem.OriginalImage == null) mat.Dispose();
@@ -406,7 +406,7 @@ namespace CardCropperNet
                 ShadowSlider.Value = 0;
 
                 bool usedSelection = selectionOrder.Count(i => imageItems.Contains(i)) > 0;
-                CropStatusText.Text = $"✅ 已应用明暗度到 {targets.Count} 张" + (usedSelection ? "（选中）" : "（全部）");
+                // CropStatusText.Text = $"✅ 已应用明暗度到 {targets.Count} 张" + (usedSelection ? "（选中）" : "（全部）");
                 if (currentItem != null) ShowPreview(currentItem);
             }
             catch (Exception ex)
@@ -463,7 +463,7 @@ namespace CardCropperNet
 
                 ShowPage(0);
                 bool usedSelection = selectionOrder.Count(x => imageItems.Contains(x)) > 0;
-                StatusText.Text = $"A4 拼版：{layoutPages.Count} 页（300 DPI，间隔 55mm）" +
+                // StatusText.Text = $"A4 拼版：{layoutPages.Count} 页（300 DPI，间隔 55mm）" +
                                   (usedSelection ? "，按选中顺序配对" : "，按 1-2/3-4 顺序");
             }
             catch (Exception ex)
@@ -616,7 +616,7 @@ namespace CardCropperNet
                 imageItems.Remove(item);
             }
             UpdateIndices();
-            StatusText.Text = $"已删除 {selected.Count} 张，剩余 {imageItems.Count} 张";
+            // StatusText.Text = $"已删除 {selected.Count} 张，剩余 {imageItems.Count} 张";
         }
 
         private void ClearList_Click(object sender, RoutedEventArgs e)
@@ -626,8 +626,8 @@ namespace CardCropperNet
             imageItems.Clear();
             selectionOrder.Clear();
             PreviewImage.Source = null;
-            StatusText.Text = "";
-            CropStatusText.Text = "";
+            // StatusText.Text = "";
+            // CropStatusText.Text = "";
             PageInfoText.Text = "";
             ClearLayoutPages();
         }
@@ -661,7 +661,7 @@ namespace CardCropperNet
 
             if (currentItem != null && selected.Contains(currentItem))
                 ShowPreview(currentItem);
-            StatusText.Text = $"已{(clockwise ? "顺" : "逆")}时针旋转 {selected.Count} 张";
+            // StatusText.Text = $"已{(clockwise ? "顺" : "逆")}时针旋转 {selected.Count} 张";
         }
 
         // ============ 拖拽排序（带分割线提示） ============
