@@ -16,11 +16,19 @@
                        FontSize="15" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
             <Button Content="↻ 顺时针90°" Click="RotateCW_Click" Padding="12,6" Margin="4"/>
             <Button Content="↺ 逆时针90°" Click="RotateCCW_Click" Padding="12,6" Margin="4"/>
+            <Separator Width="20" Opacity="0"/>
+            <Button Content="🔍 放大" Click="ZoomIn_Click" Padding="12,6" Margin="4"/>
+            <Button Content="🔍 缩小" Click="ZoomOut_Click" Padding="12,6" Margin="4"/>
+            <Button Content="↔️ 适应窗口" Click="ZoomFit_Click" Padding="12,6" Margin="4"/>
+            <TextBlock x:Name="ZoomText" Text="100%" VerticalAlignment="Center" Margin="8,0" FontWeight="Bold"/>
         </StackPanel>
 
         <Border Grid.Row="1" Background="#9E9E9E" Margin="12">
             <ScrollViewer x:Name="ImageScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          MouseWheel="Scroller_MouseWheel">
+                          MouseWheel="Scroller_MouseWheel"
+                          PreviewMouseLeftButtonDown="Scroller_PreviewMouseLeftButtonDown"
+                          PreviewMouseMove="Scroller_PreviewMouseMove"
+                          PreviewMouseLeftButtonUp="Scroller_PreviewMouseLeftButtonUp">
                 <Canvas x:Name="CropCanvas" ClipToBounds="False"
                         MouseLeftButtonDown="Canvas_MouseLeftButtonDown"
                         Cursor="Cross"

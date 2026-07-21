@@ -17,6 +17,10 @@ namespace CardCropperNet
         private int imgDisplayW, imgDisplayH;
         private double currentZoom = 1.0;
 
+        // 🔥 平移相关
+        private bool isPanning = false;
+        private Point lastPanPoint;
+
         private List<Point> clickedPoints = new List<Point>();
         private List<Ellipse> markers = new List<Ellipse>();
         private const double MARKER_R = 8;
@@ -233,6 +237,76 @@ namespace CardCropperNet
             Confirmed = false;
             DialogResult = false;
             Close();
+        }
+
+        // 🔥 放大按钮
+        private void ZoomIn_Click(object sender, RoutedEventArgs e)
+        {
+            double newZoom = currentZoom * 1.2;
+            newZoom = Math.Min(5.0, newZoom);
+            ApplyZoom(newZoom);
+        }
+
+        // 🔥 缩小按钮
+        private void ZoomOut_Click(object sender, RoutedEventArgs e)
+        {
+            double newZoom = currentZoom / 1.2;
+            newZoom = Math.Max(0.3, newZoom);
+            ApplyZoom(newZoom);
+        }
+
+        // 🔥 适应窗口
+        private void ZoomFit_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyZoom(1.0);
+            ImageScroller.ScrollToHorizontalOffset(0);
+            ImageScroller.ScrollToVerticalOffset(0);
+        }
+
+        private void ApplyZoom(double newZoom)
+        {
+            currentZoom = newZoom;
+            CanvasScale.ScaleX = currentZoom;
+            CanvasScale.ScaleY = currentZoom;
+            ZoomText.Text = $"{(int)(currentZoom * 100)}%";
+        }
+
+        // 🔥 鼠标中键或Ctrl+左键拖动平移
+        private void Scroller_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl) || e.MiddleButton == MouseButtonState.Pressed)
+            {
+                isPanning = true;
+                lastPanPoint = e.GetPosition(ImageScroller);
+                ImageScroller.Cursor = Cursors.Hand;
+                e.Handled = true;
+            }
+        }
+
+        private void Scroller_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (isPanning)
+            {
+                var currentPoint = e.GetPosition(ImageScroller);
+                double deltaX = lastPanPoint.X - currentPoint.X;
+                double deltaY = lastPanPoint.Y - currentPoint.Y;
+
+                ImageScroller.ScrollToHorizontalOffset(ImageScroller.HorizontalOffset + deltaX);
+                ImageScroller.ScrollToVerticalOffset(ImageScroller.VerticalOffset + deltaY);
+
+                lastPanPoint = currentPoint;
+                e.Handled = true;
+            }
+        }
+
+        private void Scroller_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (isPanning)
+            {
+                isPanning = false;
+                ImageScroller.Cursor = Cursors.Arrow;
+                e.Handled = true;
+            }
         }
     }
 }

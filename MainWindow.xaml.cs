@@ -215,8 +215,8 @@ namespace CardCropperNet
             if (currentPageIndex < layoutPages.Count - 1) ShowPage(currentPageIndex + 1);
         }
 
-        // ============ 一键裁剪（带透视纠正） ============
-        private void AutoCrop_Click(object sender, RoutedEventArgs e)
+        // ============ 一键裁剪（三层降级：百度OCR → 本地OpenCV → 手动裁剪） ============
+        private async void AutoCrop_Click(object sender, RoutedEventArgs e)
         {
             if (imageItems.Count == 0)
             {
@@ -225,43 +225,104 @@ namespace CardCropperNet
             }
 
             var targets = GetTargetItems();
+            var btn = sender as Button;
+            if (btn != null) btn.IsEnabled = false;
 
             try
             {
-                int successCount = 0, lowConfidenceCount = 0;
+                int baiduCount = 0, opencvCount = 0, manualCount = 0, failCount = 0;
+                CropStatusText.Text = "正在裁剪...";
 
                 foreach (var item in targets)
                 {
                     var mat = item.OriginalImage ?? CvInvoke.Imread(item.FilePath, Emgu.CV.CvEnum.ImreadModes.Color);
+                    Mat? croppedMat = null;
+                    double confidence = 0;
+                    string method = "";
 
-                    if (cropper != null)
+                    // 🔥 第1层：百度OCR（身份证专用）
+                    if (RadioIdCard.IsChecked == true)
                     {
-                        var (croppedMat, confidence) = cropper.CropCard(mat);
-                        if (croppedMat != null)
+                        var (baiduResult, baiduConf) = await BaiduOCR.RecognizeIdCard(mat);
+                        if (baiduResult != null && baiduConf > 0.6)
                         {
-                            item.CroppedImage?.Dispose();
-                            item.CroppedImage = croppedMat.Clone();
-                            item.Confidence = confidence;
-                            item.RefreshThumbnail();
-                            successCount++;
-                            if (confidence < 0.8) lowConfidenceCount++;
+                            croppedMat = baiduResult;
+                            confidence = baiduConf;
+                            method = "百度OCR";
+                            baiduCount++;
                         }
-                        croppedMat?.Dispose();
                     }
 
+                    // 🔥 第2层：本地OpenCV（降级方案）
+                    if (croppedMat == null && cropper != null)
+                    {
+                        var (localResult, localConf) = cropper.CropCard(mat);
+                        if (localResult != null && localConf > 0.5)
+                        {
+                            croppedMat = localResult;
+                            confidence = localConf;
+                            method = "本地识别";
+                            opencvCount++;
+                        }
+                        else
+                        {
+                            localResult?.Dispose();
+                        }
+                    }
+
+                    // 🔥 第3层：手动裁剪（兜底）
+                    if (croppedMat == null || confidence < 0.5)
+                    {
+                        croppedMat?.Dispose();
+                        var win = new ManualCropWindow(mat) { Owner = this };
+                        if (win.ShowDialog() == true && win.ResultImage != null)
+                        {
+                            croppedMat = win.ResultImage.Clone();
+                            confidence = 1.0;
+                            method = "手动裁剪";
+                            manualCount++;
+                        }
+                        else
+                        {
+                            failCount++;
+                        }
+                    }
+
+                    // 应用结果
+                    if (croppedMat != null)
+                    {
+                        item.CroppedImage?.Dispose();
+                        item.CroppedImage = croppedMat.Clone();
+                        item.Confidence = confidence;
+                        item.RefreshThumbnail();
+                    }
+
+                    croppedMat?.Dispose();
                     if (item.OriginalImage == null) mat.Dispose();
+
+                    // 更新进度
+                    var current = baiduCount + opencvCount + manualCount + failCount;
+                    CropStatusText.Text = $"处理中... {current}/{targets.Count}";
                 }
 
+                // 汇总结果
                 bool usedSelection = selectionOrder.Count(i => imageItems.Contains(i)) > 0;
-                CropStatusText.Text = $"✅ 裁剪完成：{successCount}/{targets.Count}" + (usedSelection ? "（选中）" : "（全部）");
-                if (lowConfidenceCount > 0)
-                    CropStatusText.Text += $"\n⚠️ {lowConfidenceCount} 张置信度较低，建议手动裁剪";
+                var summary = $"✅ 裁剪完成：{targets.Count - failCount}/{targets.Count}" + (usedSelection ? "（选中）" : "（全部）");
+                if (baiduCount > 0) summary += $"\n🌐 云端识别：{baiduCount} 张";
+                if (opencvCount > 0) summary += $"\n💻 本地识别：{opencvCount} 张";
+                if (manualCount > 0) summary += $"\n✋ 手动裁剪：{manualCount} 张";
+                if (failCount > 0) summary += $"\n❌ 跳过：{failCount} 张";
+                CropStatusText.Text = summary;
 
                 if (currentItem != null) ShowPreview(currentItem);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"裁剪失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (btn != null) btn.IsEnabled = true;
             }
         }
 
