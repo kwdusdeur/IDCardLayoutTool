@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Emgu.CV;
+using System.Windows;
 
 namespace CardCropperNet
 {
@@ -30,6 +31,7 @@ namespace CardCropperNet
             var expiresIn = json.RootElement.GetProperty("expires_in").GetInt32();
             tokenExpiry = DateTime.Now.AddSeconds(expiresIn - 600); // 提前10分钟刷新
             
+            Console.WriteLine($"✅ 百度OCR Token已获取，有效期{expiresIn}秒");
             return accessToken!;
         }
 
@@ -38,75 +40,39 @@ namespace CardCropperNet
         {
             try
             {
+                Console.WriteLine($"🌐 调用百度OCR识别身份证...");
                 var token = await GetAccessToken();
                 var base64 = MatToBase64(image);
 
                 using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                var url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/idcard?access_token={token}";
+                
+                // 🔥 使用通用文字识别（高精度版）获取文字位置
+                var url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token={token}";
 
                 var content = new StringContent(
-                    $"id_card_side={side}&image={Uri.EscapeDataString(base64)}&detect_direction=true&detect_risk=false",
+                    $"image={Uri.EscapeDataString(base64)}&detect_direction=true&probability=true",
                     Encoding.UTF8,
                     "application/x-www-form-urlencoded"
                 );
 
                 var response = await client.PostAsync(url, content);
                 var result = await response.Content.ReadAsStringAsync();
+                
+                Console.WriteLine($"百度API响应: {result.Substring(0, Math.Min(200, result.Length))}...");
+                
                 var json = JsonDocument.Parse(result);
 
                 // 检查是否有错误
-                if (json.RootElement.TryGetProperty("error_code", out _))
+                if (json.RootElement.TryGetProperty("error_code", out var errCode))
                 {
-                    Console.WriteLine($"百度API错误: {result}");
+                    var errMsg = json.RootElement.TryGetProperty("error_msg", out var msg) ? msg.GetString() : "未知错误";
+                    Console.WriteLine($"❌ 百度API错误 [{errCode}]: {errMsg}");
                     return (null, 0);
                 }
 
-                // 提取裁剪区域（四角坐标）
-                if (json.RootElement.TryGetProperty("image_status", out var status) && 
-                    status.GetString() == "normal" &&
-                    json.RootElement.TryGetProperty("words_result", out var words))
-                {
-                    // 百度返回的是识别结果，我们需要根据文字位置推算卡片范围
-                    // 更好的方式是用身份证检测API
-                    return await RecognizeIdCardWithDetect(image);
-                }
-
-                return (null, 0);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"百度OCR异常: {ex.Message}");
-                return (null, 0);
-            }
-        }
-
-        // 身份证检测（返回裁剪后图片）
-        private static async Task<(Mat? croppedImage, double confidence)> RecognizeIdCardWithDetect(Mat image)
-        {
-            try
-            {
-                var token = await GetAccessToken();
-                var base64 = MatToBase64(image);
-
-                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                var url = $"https://aip.baidubce.com/rest/2.0/image-classify/v1/body_attr?access_token={token}";
-
-                // 使用通用文字识别（带位置信息）
-                url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/general?access_token={token}";
-
-                var content = new StringContent(
-                    $"image={Uri.EscapeDataString(base64)}&detect_direction=true&paragraph=false&probability=true",
-                    Encoding.UTF8,
-                    "application/x-www-form-urlencoded"
-                );
-
-                var response = await client.PostAsync(url, content);
-                var result = await response.Content.ReadAsStringAsync();
-                var json = JsonDocument.Parse(result);
-
+                // 提取所有文字区域的边界框
                 if (json.RootElement.TryGetProperty("words_result", out var words) && words.GetArrayLength() > 0)
                 {
-                    // 提取所有文字区域的边界框
                     int minX = int.MaxValue, minY = int.MaxValue;
                     int maxX = 0, maxY = 0;
                     double totalProb = 0;
@@ -136,9 +102,9 @@ namespace CardCropperNet
 
                     if (count > 0)
                     {
-                        // 扩展边距10%
-                        int marginX = (int)((maxX - minX) * 0.1);
-                        int marginY = (int)((maxY - minY) * 0.1);
+                        // 扩展边距15%（留白）
+                        int marginX = (int)((maxX - minX) * 0.15);
+                        int marginY = (int)((maxY - minY) * 0.15);
 
                         minX = Math.Max(0, minX - marginX);
                         minY = Math.Max(0, minY - marginY);
@@ -146,9 +112,17 @@ namespace CardCropperNet
                         maxY = Math.Min(image.Height, maxY + marginY);
 
                         var rect = new System.Drawing.Rectangle(minX, minY, maxX - minX, maxY - minY);
+                        
+                        // 检查裁剪区域是否合理
+                        if (rect.Width < 50 || rect.Height < 50 || rect.Width > image.Width * 0.95 || rect.Height > image.Height * 0.95)
+                        {
+                            Console.WriteLine($"⚠️ 百度OCR裁剪区域不合理: {rect.Width}x{rect.Height}");
+                            return (null, 0);
+                        }
+
                         var cropped = new Mat(image, rect).Clone();
 
-                        // 横向检查：如果是竖的，旋转90度
+                        // 横向检查：身份证应该是横向的
                         if (cropped.Height > cropped.Width)
                         {
                             var rotated = new Mat();
@@ -158,15 +132,17 @@ namespace CardCropperNet
                         }
 
                         double confidence = totalProb / count;
+                        Console.WriteLine($"✅ 百度OCR识别成功: {cropped.Width}x{cropped.Height}, 置信度={confidence:F2}");
                         return (cropped, confidence);
                     }
                 }
 
+                Console.WriteLine($"⚠️ 百度OCR未检测到文字区域");
                 return (null, 0);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"百度检测异常: {ex.Message}");
+                Console.WriteLine($"❌ 百度OCR异常: {ex.Message}");
                 return (null, 0);
             }
         }
