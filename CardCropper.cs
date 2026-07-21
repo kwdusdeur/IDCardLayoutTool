@@ -65,7 +65,7 @@ namespace CardCropperNet
                         }
 
                         // 如果已经很好了，不再尝试后续方法
-                        if (bestScore > 0.85) break;
+                        if (bestScore > 0.90) break;
                     }
                     catch (Exception ex)
                     {
@@ -73,7 +73,7 @@ namespace CardCropperNet
                     }
                 }
 
-                if (bestResult != null && bestScore > 0.4)
+                if (bestResult != null && bestScore > 0.35)
                 {
                     Console.WriteLine($"✅ 使用方法: {bestMethod}, 置信度: {bestScore:F2}");
                     return (bestResult, bestScore);
@@ -98,13 +98,13 @@ namespace CardCropperNet
 
             // 增强对比度
             var clahe = new Mat();
-            CvInvoke.CLAHE(gray, 4.0, new Size(8, 8), clahe);
+            CvInvoke.CLAHE(gray, 3.0, new Size(8, 8), clahe);
 
             var blurred = new Mat();
             CvInvoke.GaussianBlur(clahe, blurred, new Size(5, 5), 0);
 
-            // 尝试3组不同阈值
-            var thresholds = new[] { (30, 100), (50, 150), (70, 200) };
+            // 🔥 尝试5组不同阈值（扩大范围）
+            var thresholds = new[] { (20, 80), (30, 100), (50, 150), (70, 200), (100, 250) };
             
             foreach (var (low, high) in thresholds)
             {
@@ -422,7 +422,7 @@ namespace CardCropperNet
                     var peri = CvInvoke.ArcLength(contour, true);
 
                     // 尝试多个epsilon值
-                    foreach (var epsilon in new[] { 0.02, 0.03, 0.04, 0.05 })
+                    foreach (var epsilon in new[] { 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06 })
                     {
                         using (var approx = new VectorOfPoint())
                         {

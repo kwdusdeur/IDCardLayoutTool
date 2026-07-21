@@ -33,6 +33,11 @@ namespace CardCropperNet
 
         private List<ImageItem> selectionOrder = new List<ImageItem>();
 
+        // 🔥 矩形框选相关字段
+        private bool isRectSelecting = false;
+        private Point rectSelectStart;
+        private HashSet<ImageItem> initialSelection = new HashSet<ImageItem>();
+
         public MainWindow()
         {
             InitializeComponent();
@@ -599,16 +604,68 @@ namespace CardCropperNet
         }
 
         // ============ 拖拽排序（带分割线提示） ============
+        // 🔥 鼠标按下：区分拖拽排序 vs 矩形框选
         private void ImageListBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.OriginalSource is FrameworkElement elem && elem.DataContext is ImageItem item)
-                dragStartIndex = imageItems.IndexOf(item);
+            var hitElem = ImageListBox.InputHitTest(e.GetPosition(ImageListBox)) as DependencyObject;
+            var hitItem = GetItemFromElement(hitElem);
+
+            if (hitItem != null)
+            {
+                // 点击到项目 → 拖拽排序模式
+                dragStartIndex = imageItems.IndexOf(hitItem);
+                isRectSelecting = false;
+            }
+            else
+            {
+                // 点击空白 → 矩形框选模式
+                isRectSelecting = true;
+                rectSelectStart = e.GetPosition(ImageListBox);
+                initialSelection = new HashSet<ImageItem>(ImageListBox.SelectedItems.Cast<ImageItem>());
+                
+                if (!Keyboard.IsKeyDown(Key.LeftCtrl) && !Keyboard.IsKeyDown(Key.RightCtrl) &&
+                    !Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
+                {
+                    ImageListBox.SelectedItems.Clear();
+                    initialSelection.Clear();
+                }
+                
+                SelectionRectangle.Visibility = Visibility.Visible;
+                Canvas.SetLeft(SelectionRectangle, rectSelectStart.X);
+                Canvas.SetTop(SelectionRectangle, rectSelectStart.Y);
+                SelectionRectangle.Width = 0;
+                SelectionRectangle.Height = 0;
+                
+                e.Handled = true;
+            }
         }
 
+        // 🔥 鼠标移动：拖拽排序 vs 矩形框选
         private void ImageListBox_PreviewMouseMove(object sender, MouseEventArgs e)
         {
-            if (e.LeftButton == MouseButtonState.Pressed && dragStartIndex >= 0 && !isDragging)
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+
+            if (isRectSelecting)
             {
+                // 矩形框选逻辑
+                var currentPos = e.GetPosition(ImageListBox);
+                var x = Math.Min(rectSelectStart.X, currentPos.X);
+                var y = Math.Min(rectSelectStart.Y, currentPos.Y);
+                var w = Math.Abs(currentPos.X - rectSelectStart.X);
+                var h = Math.Abs(currentPos.Y - rectSelectStart.Y);
+
+                Canvas.SetLeft(SelectionRectangle, x);
+                Canvas.SetTop(SelectionRectangle, y);
+                SelectionRectangle.Width = w;
+                SelectionRectangle.Height = h;
+
+                // 实时更新选中状态
+                UpdateRectangleSelection(new Rect(x, y, w, h));
+                e.Handled = true;
+            }
+            else if (dragStartIndex >= 0 && !isDragging)
+            {
+                // 拖拽排序逻辑
                 isDragging = true;
                 var item = imageItems[dragStartIndex];
                 DragDrop.DoDragDrop(ImageListBox, item, DragDropEffects.Move);
@@ -616,6 +673,57 @@ namespace CardCropperNet
                 isDragging = false;
                 dragStartIndex = -1;
             }
+        }
+
+        // 🔥 鼠标释放：结束矩形框选
+        private void ImageListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (isRectSelecting)
+            {
+                SelectionRectangle.Visibility = Visibility.Collapsed;
+                isRectSelecting = false;
+                e.Handled = true;
+            }
+        }
+
+        // 🔥 根据矩形范围更新选中项
+        private void UpdateRectangleSelection(Rect selectionRect)
+        {
+            var toSelect = new HashSet<ImageItem>(initialSelection);
+
+            for (int i = 0; i < imageItems.Count; i++)
+            {
+                var container = ImageListBox.ItemContainerGenerator.ContainerFromIndex(i) as ListBoxItem;
+                if (container != null)
+                {
+                    var transform = container.TransformToAncestor(ImageListBox);
+                    var itemBounds = transform.TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
+
+                    if (selectionRect.IntersectsWith(itemBounds))
+                    {
+                        toSelect.Add(imageItems[i]);
+                    }
+                }
+            }
+
+            // 批量更新选中状态
+            ImageListBox.SelectedItems.Clear();
+            foreach (var item in toSelect)
+            {
+                ImageListBox.SelectedItems.Add(item);
+            }
+        }
+
+        // 🔥 辅助方法：从 DependencyObject 获取 ImageItem
+        private ImageItem? GetItemFromElement(DependencyObject? elem)
+        {
+            while (elem != null && elem != ImageListBox)
+            {
+                if (elem is ListBoxItem lbi && lbi.Content is ImageItem item)
+                    return item;
+                elem = VisualTreeHelper.GetParent(elem);
+            }
+            return null;
         }
 
         private void ImageListBox_Drop(object sender, DragEventArgs e)

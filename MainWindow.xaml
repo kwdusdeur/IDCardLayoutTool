@@ -25,13 +25,13 @@
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
 
-        <!-- 右栏带色块的高按钮样式 -->
+        <!-- 右栏带色块的按钮样式（缩小版本） -->
         <Style x:Key="ColorActionButton" TargetType="Button">
-            <Setter Property="Padding" Value="8,12"/>
+            <Setter Property="Padding" Value="6,8"/>
             <Setter Property="Margin" Value="3"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="MinHeight" Value="48"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="MinHeight" Value="38"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
@@ -68,7 +68,6 @@
         </Style>
     </Window.Resources>
 
-    <!-- 跟随系统：不强制深色，使用默认窗口背景 -->
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="380"/>
@@ -96,42 +95,51 @@
                 <Button Content="✋ 手动裁剪" Click="ManualCrop_Click" Style="{StaticResource LeftBigButton}"/>
             </UniformGrid>
 
-            <!-- ListBox 支持拖矩形框选 + 右键菜单框选 -->
-            <ListBox Grid.Row="2" x:Name="ImageListBox"
-                     SelectionMode="Extended"
-                     ItemContainerStyle="{StaticResource ImageItemContainerStyle}"
-                     SelectionChanged="ImageListBox_SelectionChanged"
-                     PreviewMouseLeftButtonDown="ImageListBox_PreviewMouseLeftButtonDown"
-                     PreviewMouseMove="ImageListBox_PreviewMouseMove"
-                     MouseLeftButtonDown="ImageListBox_MouseLeftButtonDown"
-                     MouseRightButtonDown="ImageListBox_MouseRightButtonDown"
-                     Drop="ImageListBox_Drop"
-                     DragOver="ImageListBox_DragOver"
-                     AllowDrop="True"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Width="100" Height="70" Background="#EEEEEE">
-                                <Image Source="{Binding ThumbnailImage}" Stretch="Uniform" Margin="2"/>
-                            </Border>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
-                                <TextBlock Text="{Binding DisplayLabel}" Foreground="#2266CC"
-                                           FontWeight="Bold" FontSize="12"/>
-                                <!-- 文件名显示最长36字符，超出不滚动 -->
-                                <TextBlock Text="{Binding FileName}"
-                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" 
-                                           FontSize="11" MaxWidth="230"/>
-                            </StackPanel>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+            <!-- 🔥 ListBox 支持拖矩形框选：Canvas 叠加层显示选择框 -->
+            <Grid Grid.Row="2">
+                <ListBox x:Name="ImageListBox"
+                         SelectionMode="Extended"
+                         ItemContainerStyle="{StaticResource ImageItemContainerStyle}"
+                         SelectionChanged="ImageListBox_SelectionChanged"
+                         PreviewMouseLeftButtonDown="ImageListBox_PreviewMouseLeftButtonDown"
+                         PreviewMouseMove="ImageListBox_PreviewMouseMove"
+                         PreviewMouseLeftButtonUp="ImageListBox_PreviewMouseLeftButtonUp"
+                         MouseRightButtonDown="ImageListBox_MouseRightButtonDown"
+                         Drop="ImageListBox_Drop"
+                         DragOver="ImageListBox_DragOver"
+                         AllowDrop="True"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="100" Height="70" Background="#EEEEEE">
+                                    <Image Source="{Binding ThumbnailImage}" Stretch="Uniform" Margin="2"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <TextBlock Text="{Binding DisplayLabel}" Foreground="#2266CC"
+                                               FontWeight="Bold" FontSize="12"/>
+                                    <TextBlock Text="{Binding FileName}"
+                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" 
+                                               FontSize="11" MaxWidth="230"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                
+                <!-- 🔥 选择框叠加层 -->
+                <Canvas x:Name="SelectionCanvas" Background="Transparent" IsHitTestVisible="False">
+                    <Rectangle x:Name="SelectionRectangle" 
+                               Stroke="#3F8EFF" StrokeThickness="2" 
+                               Fill="#223F8EFF" 
+                               Visibility="Collapsed"/>
+                </Canvas>
+            </Grid>
 
             <!-- 添加/删除/清空 -->
             <UniformGrid Grid.Row="3" Columns="3" Margin="0,6,0,0">
@@ -141,7 +149,7 @@
             </UniformGrid>
         </Grid>
 
-        <!-- 中间：预览区（灰色背景衬托 A4 白纸，拼版时显示上下页，裁剪预览时不显示） -->
+        <!-- 中间：预览区 -->
         <Grid Grid.Column="1" Margin="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -150,10 +158,9 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="预览区：裁剪 / 拼版效果显示在这里"
+            <TextBlock Grid.Row="0" Text="预览区"
                        FontSize="13" FontWeight="Bold" Margin="0,0,0,8"/>
 
-            <!-- 灰色背景衬托 A4 白纸 -->
             <Border Grid.Row="1" Background="#9E9E9E" BorderBrush="#888888" BorderThickness="1" CornerRadius="4">
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                               Padding="30">
@@ -167,7 +174,6 @@
                 </ScrollViewer>
             </Border>
 
-            <!-- 多页浏览控制（只在拼版时显示） -->
             <StackPanel Grid.Row="2" x:Name="PageControlPanel" Orientation="Horizontal" HorizontalAlignment="Center" Margin="8" Visibility="Collapsed">
                 <Button x:Name="PrevPageBtn" Content="◀ 上一页" Click="PrevPage_Click" Padding="12,6" Margin="4"/>
                 <TextBlock x:Name="PageInfoText" Text="" VerticalAlignment="Center" Margin="12,0" FontSize="13" FontWeight="Bold"/>
@@ -178,26 +184,26 @@
                        HorizontalAlignment="Center" Margin="8" FontSize="12" Foreground="#555555"/>
         </Grid>
 
-        <!-- 右侧：工具栏（加宽到300px，添加证卡类型标题，删除所有分隔线） -->
+        <!-- 右侧：工具栏 -->
         <Border Grid.Column="2" Margin="10" CornerRadius="4">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                 <StackPanel>
-                    <!-- 证卡类型（加标题） -->
-                    <TextBlock Text="证卡类型" FontSize="14" FontWeight="Bold" Margin="4,0,4,8"/>
-                    <StackPanel Margin="0,0,0,16">
-                        <RadioButton x:Name="RadioIdCard" Content="身份证" IsChecked="True" Margin="4"/>
-                        <RadioButton x:Name="RadioBankCard" Content="银行卡" Margin="4"/>
-                        <RadioButton x:Name="RadioDriverLicense" Content="驾驶证" Margin="4"/>
-                        <RadioButton x:Name="RadioPassport" Content="护照" Margin="4"/>
-                    </StackPanel>
+                    <!-- 🔥 证卡类型（加外框） -->
+                    <Border BorderBrush="#BBBBBB" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="证卡类型" FontSize="13" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <RadioButton x:Name="RadioIdCard" Content="身份证" IsChecked="True" Margin="4,2"/>
+                            <RadioButton x:Name="RadioBankCard" Content="银行卡" Margin="4,2"/>
+                            <RadioButton x:Name="RadioDriverLicense" Content="驾驶证" Margin="4,2"/>
+                            <RadioButton x:Name="RadioPassport" Content="护照" Margin="4,2"/>
+                        </StackPanel>
+                    </Border>
 
                     <!-- 一键裁剪 -->
                     <Button Content="✂️ 一键裁剪" Click="AutoCrop_Click" Background="#4CAF50" Style="{StaticResource ColorActionButton}"/>
                     <TextBlock x:Name="CropStatusText" Text="" Margin="4,4,4,12" FontSize="11" Foreground="#2E7D32" TextWrapping="Wrap"/>
 
-                    <!-- 明暗度调整 -->
-                    <TextBlock Text="拖滑块预览，点「应用」生效" FontSize="11" Foreground="#666666" Margin="4,0,4,8" TextWrapping="Wrap"/>
-                    
+                    <!-- 🔥 明暗度调整（移除顶部说明文字） -->
                     <TextBlock Text="亮部" FontSize="11" Margin="4,4,4,0"/>
                     <Slider x:Name="HighlightSlider" Minimum="-100" Maximum="100" Value="0"
                             TickFrequency="10" IsSnapToTickEnabled="True"
