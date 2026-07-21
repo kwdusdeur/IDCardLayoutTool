@@ -1,0 +1,11 @@
+## .NET 项目
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+
+## 临时文件
+*.tmp
+*.log
