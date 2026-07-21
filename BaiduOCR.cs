@@ -34,8 +34,8 @@ namespace CardCropperNet
             return accessToken!;
         }
 
-        // 🔥 身份证混贴识别（返回精确卡片位置）
-        public static async Task<(Mat? croppedImage, double confidence)> RecognizeIdCard(Mat image)
+        // 🔥 身份证混贴识别（返回矩形裁剪 + 本地透视纠正）
+        public static async Task<(Mat? croppedImage, double confidence)> RecognizeIdCard(Mat image, CardCropper? localCropper = null)
         {
             try
             {
@@ -106,23 +106,51 @@ namespace CardCropperNet
                                 return (null, 0);
                             }
 
-                            // 裁剪
+                            // 🔥 第1步：百度矩形裁剪出大致区域
                             var rect = new System.Drawing.Rectangle(left, top, width, height);
-                            var cropped = new Mat(image, rect).Clone();
+                            var roughCrop = new Mat(image, rect);
+                            Console.WriteLine($"✅ 百度矩形裁剪: {roughCrop.Width}x{roughCrop.Height}");
 
-                            // 自动旋转：身份证应该是横向的
-                            if (cropped.Height > cropped.Width)
+                            // 🔥 第2步：在裁出区域内用本地OpenCV做透视纠正
+                            Mat? finalCrop = null;
+                            double finalConf = 0.90; // 百度检测到=基础置信度0.90
+
+                            if (localCropper != null)
                             {
-                                var rotated = new Mat();
-                                CvInvoke.Rotate(cropped, rotated, Emgu.CV.CvEnum.RotateFlags.Rotate90Clockwise);
-                                cropped.Dispose();
-                                cropped = rotated;
+                                Console.WriteLine($"🔧 本地OpenCV透视纠正中...");
+                                var (perspectiveCrop, perspectiveConf) = localCropper.CropCard(roughCrop);
+                                
+                                if (perspectiveCrop != null && perspectiveConf > 0.3)
+                                {
+                                    finalCrop = perspectiveCrop;
+                                    finalConf = 0.95; // 百度+本地透视=高置信度0.95
+                                    Console.WriteLine($"✅ 透视纠正成功，置信度={perspectiveConf:F2}");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"⚠️ 透视纠正失败，使用百度矩形裁剪");
+                                    perspectiveCrop?.Dispose();
+                                    finalCrop = roughCrop.Clone();
+                                }
+                            }
+                            else
+                            {
+                                finalCrop = roughCrop.Clone();
                             }
 
-                            // 置信度：百度检测到身份证=高置信度
-                            double confidence = 0.95;
-                            Console.WriteLine($"✅ 百度OCR识别成功: 类型={cardType}, 状态={imageStatus}, 尺寸={cropped.Width}x{cropped.Height}");
-                            return (cropped, confidence);
+                            roughCrop.Dispose();
+
+                            // 🔥 第3步：自动旋转横向
+                            if (finalCrop != null && finalCrop.Height > finalCrop.Width)
+                            {
+                                var rotated = new Mat();
+                                CvInvoke.Rotate(finalCrop, rotated, Emgu.CV.CvEnum.RotateFlags.Rotate90Clockwise);
+                                finalCrop.Dispose();
+                                finalCrop = rotated;
+                            }
+
+                            Console.WriteLine($"✅ 百度OCR最终结果: 类型={cardType}, 状态={imageStatus}, 尺寸={finalCrop?.Width}x{finalCrop?.Height}, 置信度={finalConf:F2}");
+                            return (finalCrop, finalConf);
                         }
                         else
                         {

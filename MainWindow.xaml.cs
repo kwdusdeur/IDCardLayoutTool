@@ -243,7 +243,7 @@ namespace CardCropperNet
                     // 🔥 第1层：百度OCR（身份证专用）
                     if (RadioIdCard.IsChecked == true)
                     {
-                        var (baiduResult, baiduConf) = await BaiduOCR.RecognizeIdCard(mat);
+                        var (baiduResult, baiduConf) = await BaiduOCR.RecognizeIdCard(mat, cropper);
                         if (baiduResult != null && baiduConf > 0.6)
                         {
                             croppedMat = baiduResult;
