@@ -573,12 +573,6 @@ namespace CardCropperNet
 
         private void ExportImage_Click(object sender, RoutedEventArgs e)
         {
-            // 🔥 JPEG 质量参数（避免无压缩导致文件过大）
-            var jpgParams = new KeyValuePair<Emgu.CV.CvEnum.ImwriteFlags, int>[]
-            {
-                new(Emgu.CV.CvEnum.ImwriteFlags.JpegQuality, 92)
-            };
-
             if (layoutPages.Count > 0)
             {
                 var dialog = new SaveFileDialog
@@ -593,7 +587,7 @@ namespace CardCropperNet
                         if (layoutPages.Count == 1)
                         {
                             using var outMat = GetPageForOutput(layoutPages[0]);
-                            CvInvoke.Imwrite(dialog.FileName, outMat, jpgParams);
+                            SaveJpgWithDpi(outMat, dialog.FileName, 300);
                         }
                         else
                         {
@@ -602,10 +596,10 @@ namespace CardCropperNet
                             for (int i = 0; i < layoutPages.Count; i++)
                             {
                                 using var outMat = GetPageForOutput(layoutPages[i]);
-                                CvInvoke.Imwrite(System.IO.Path.Combine(dir, $"{baseName}_{i + 1}.jpg"), outMat, jpgParams);
+                                SaveJpgWithDpi(outMat, System.IO.Path.Combine(dir, $"{baseName}_{i + 1}.jpg"), 300);
                             }
                         }
-                        MessageBox.Show($"导出成功（{layoutPages.Count} 张 JPG）！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        MessageBox.Show($"导出成功（{layoutPages.Count} 张 JPG，300 DPI）！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     catch (Exception ex)
                     {
@@ -632,14 +626,27 @@ namespace CardCropperNet
                 try
                 {
                     using var outMat = GetPageForOutput(toExport);
-                    CvInvoke.Imwrite(d2.FileName, outMat, jpgParams);
-                    MessageBox.Show("导出成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    SaveJpgWithDpi(outMat, d2.FileName, 300);
+                    MessageBox.Show("导出成功（300 DPI）！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show($"导出失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+
+        // 🔥 保存 JPG 并写入 DPI 元数据（修复导出图片被当作72 DPI而显得巨大的问题）
+        private static void SaveJpgWithDpi(Mat mat, string path, float dpi)
+        {
+            using var bmp = mat.ToBitmap();
+            bmp.SetResolution(dpi, dpi);
+            var codec = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders()
+                .First(c => c.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+            using var ep = new System.Drawing.Imaging.EncoderParameters(1);
+            ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(
+                System.Drawing.Imaging.Encoder.Quality, 92L);
+            bmp.Save(path, codec, ep);
         }
 
         // ============ 列表操作 ============

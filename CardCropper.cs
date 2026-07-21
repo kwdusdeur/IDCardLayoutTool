@@ -571,7 +571,7 @@ namespace CardCropperNet
             // 🔥 轻微向外扩展四角，修复边缘多裁约1mm的问题
             var cx = (tl.X + tr.X + br.X + bl.X) / 4f;
             var cy = (tl.Y + tr.Y + br.Y + bl.Y) / 4f;
-            const float expand = 1.010f; // 向外抓1%
+            const float expand = 1.005f; // 向外抓0.5%
             PointF Ex(PointF p) => new PointF(cx + (p.X - cx) * expand, cy + (p.Y - cy) * expand);
             tl = Ex(tl); tr = Ex(tr); br = Ex(br); bl = Ex(bl);
 
@@ -610,33 +610,34 @@ namespace CardCropperNet
         {
             if (card.Width < 10 || card.Height < 10) return card;
 
-            // 1) 自动对比度/亮度（LAB 空间对 L 通道做 CLAHE）
-            var outImg = new Mat();
+            // 1) 轻微自动白平衡：只把偏灰背景提亮到接近白，绝不压暗
+            var outImg = card.Clone();
             try
             {
-                var lab = new Mat();
-                CvInvoke.CvtColor(card, lab, ColorConversion.Bgr2Lab);
                 var ch = new VectorOfMat();
-                CvInvoke.Split(lab, ch);
-                using (var clahe = new Mat())
+                CvInvoke.Split(outImg, ch);
+                for (int c = 0; c < ch.Size; c++)
                 {
-                    CvInvoke.CLAHE(ch[0], 2.0, new Size(8, 8), ch[0]);
+                    double minVal = 0, maxVal = 0;
+                    System.Drawing.Point minLoc = default, maxLoc = default;
+                    CvInvoke.MinMaxLoc(ch[c], ref minVal, ref maxVal, ref minLoc, ref maxLoc);
+                    // 仅当白点明显低于255（背景偏灰）时提亮，且限制倍数避免过曝
+                    if (maxVal > 180 && maxVal < 250)
+                    {
+                        double scale = 255.0 / maxVal;
+                        if (scale > 1.25) scale = 1.25;
+                        ch[c].ConvertTo(ch[c], DepthType.Cv8U, scale, 0);
+                    }
                 }
-                var merged = new Mat();
-                CvInvoke.Merge(ch, merged);
-                CvInvoke.CvtColor(merged, outImg, ColorConversion.Lab2Bgr);
-                lab.Dispose(); ch.Dispose(); merged.Dispose();
+                CvInvoke.Merge(ch, outImg);
+                ch.Dispose();
             }
-            catch
-            {
-                outImg.Dispose();
-                outImg = card.Clone();
-            }
+            catch { }
 
-            // 2) 四个圆角填白（半径约为短边的6%，接近真实证卡圆角）
+            // 2) 四个圆角填白（半径约为短边的4.5%，接近真实证卡圆角）
             try
             {
-                int r = (int)(Math.Min(outImg.Width, outImg.Height) * 0.06);
+                int r = (int)(Math.Min(outImg.Width, outImg.Height) * 0.045);
                 if (r > 2)
                 {
                     var white = new MCvScalar(255, 255, 255);
