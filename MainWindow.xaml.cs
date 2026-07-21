@@ -252,6 +252,24 @@ namespace CardCropperNet
                             baiduCount++;
                         }
                     }
+                    // 🔥 第1层：百度通用卡证识别（银行卡/驾驶证/护照）
+                    else
+                    {
+                        string gType = RadioBankCard.IsChecked == true ? "银行卡" :
+                                       RadioDriverLicense?.IsChecked == true ? "驾驶证" :
+                                       RadioPassport?.IsChecked == true ? "护照" : "";
+                        if (gType != "")
+                        {
+                            var (gResult, gConf) = await BaiduOCR.RecognizeGenericCard(mat, gType, cropper);
+                            if (gResult != null && gConf > 0.6)
+                            {
+                                croppedMat = gResult;
+                                confidence = gConf;
+                                method = "百度OCR";
+                                baiduCount++;
+                            }
+                        }
+                    }
 
                     // 🔥 第2层：本地OpenCV（降级方案）
                     if (croppedMat == null && cropper != null)
@@ -366,7 +384,8 @@ namespace CardCropperNet
             try
             {
                 var adjusted = cropper.AdjustTones(currentItem.CroppedImage,
-                    (int)HighlightSlider.Value, (int)MidtoneSlider.Value, (int)ShadowSlider.Value);
+                    (int)BrightnessSlider.Value, (int)ContrastSlider.Value,
+                    (int)ShadowSlider.Value, (int)HighlightSlider.Value);
                 PreviewImage.Source = ImageItem.MatToBitmapSource(adjusted);
                 adjusted.Dispose();
             }
@@ -377,10 +396,11 @@ namespace CardCropperNet
         {
             if (cropper == null) return;
 
-            int h = (int)HighlightSlider.Value, m = (int)MidtoneSlider.Value, s = (int)ShadowSlider.Value;
-            if (h == 0 && m == 0 && s == 0)
+            int b = (int)BrightnessSlider.Value, c = (int)ContrastSlider.Value,
+                s = (int)ShadowSlider.Value, h = (int)HighlightSlider.Value;
+            if (b == 0 && c == 0 && s == 0 && h == 0)
             {
-                MessageBox.Show("三个滑块都是 0，没有需要应用的调整。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("四个滑块都是 0，没有需要应用的调整。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -395,18 +415,17 @@ namespace CardCropperNet
             {
                 foreach (var item in targets)
                 {
-                    var adjusted = cropper.AdjustTones(item.CroppedImage!, h, m, s);
+                    var adjusted = cropper.AdjustTones(item.CroppedImage!, b, c, s, h);
                     item.CroppedImage!.Dispose();
                     item.CroppedImage = adjusted;
                     item.RefreshThumbnail();
                 }
 
-                HighlightSlider.Value = 0;
-                MidtoneSlider.Value = 0;
+                BrightnessSlider.Value = 0;
+                ContrastSlider.Value = 0;
                 ShadowSlider.Value = 0;
+                HighlightSlider.Value = 0;
 
-                bool usedSelection = selectionOrder.Count(i => imageItems.Contains(i)) > 0;
-                // CropStatusText.Text = $"✅ 已应用明暗度到 {targets.Count} 张" + (usedSelection ? "（选中）" : "（全部）");
                 if (currentItem != null) ShowPreview(currentItem);
             }
             catch (Exception ex)
@@ -417,9 +436,10 @@ namespace CardCropperNet
 
         private void ResetAdjustments_Click(object sender, RoutedEventArgs e)
         {
-            HighlightSlider.Value = 0;
-            MidtoneSlider.Value = 0;
+            BrightnessSlider.Value = 0;
+            ContrastSlider.Value = 0;
             ShadowSlider.Value = 0;
+            HighlightSlider.Value = 0;
             if (currentItem != null) ShowPreview(currentItem);
         }
 
@@ -472,6 +492,14 @@ namespace CardCropperNet
         }
 
         // ============ 打印/导出 ============
+        // 🔥 根据黑白/彩色选择返回输出用的页面（需调用方 Dispose）
+        private Mat GetPageForOutput(Mat page)
+        {
+            if (RadioGrayscale.IsChecked == true)
+                return CardCropper.ToGrayscale(page);
+            return page.Clone();
+        }
+
         private void Print_Click(object sender, RoutedEventArgs e)
         {
             if (layoutPages.Count == 0)
@@ -486,7 +514,8 @@ namespace CardCropperNet
                 var pd = new PrintDocument();
                 pd.PrintPage += (s, ev) =>
                 {
-                    using var bmp = layoutPages[pageIdx].ToBitmap();
+                    using var outMat = GetPageForOutput(layoutPages[pageIdx]);
+                    using var bmp = outMat.ToBitmap();
                     ev.Graphics?.DrawImage(bmp, ev.MarginBounds);
                     pageIdx++;
                     ev.HasMorePages = pageIdx < layoutPages.Count;
@@ -523,7 +552,8 @@ namespace CardCropperNet
                         page.Height = XUnit.FromMillimeter(297);
 
                         using var gfx = XGraphics.FromPdfPage(page);
-                        using var bmp = pageMat.ToBitmap();
+                        using var outMat = GetPageForOutput(pageMat);
+                        using var bmp = outMat.ToBitmap();
                         using var ms = new MemoryStream();
                         bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
                         ms.Position = 0;
@@ -543,11 +573,17 @@ namespace CardCropperNet
 
         private void ExportImage_Click(object sender, RoutedEventArgs e)
         {
+            // 🔥 JPEG 质量参数（避免无压缩导致文件过大）
+            var jpgParams = new KeyValuePair<Emgu.CV.CvEnum.ImwriteFlags, int>[]
+            {
+                new(Emgu.CV.CvEnum.ImwriteFlags.JpegQuality, 92)
+            };
+
             if (layoutPages.Count > 0)
             {
                 var dialog = new SaveFileDialog
                 {
-                    Filter = "JPEG 图片|*.jpg|PNG 图片|*.png",
+                    Filter = "JPEG 图片|*.jpg",
                     FileName = "A4拼版.jpg"
                 };
                 if (dialog.ShowDialog() == true)
@@ -556,17 +592,20 @@ namespace CardCropperNet
                     {
                         if (layoutPages.Count == 1)
                         {
-                            CvInvoke.Imwrite(dialog.FileName, layoutPages[0]);
+                            using var outMat = GetPageForOutput(layoutPages[0]);
+                            CvInvoke.Imwrite(dialog.FileName, outMat, jpgParams);
                         }
                         else
                         {
                             var dir = System.IO.Path.GetDirectoryName(dialog.FileName)!;
                             var baseName = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
-                            var ext = System.IO.Path.GetExtension(dialog.FileName);
                             for (int i = 0; i < layoutPages.Count; i++)
-                                CvInvoke.Imwrite(System.IO.Path.Combine(dir, $"{baseName}_{i + 1}{ext}"), layoutPages[i]);
+                            {
+                                using var outMat = GetPageForOutput(layoutPages[i]);
+                                CvInvoke.Imwrite(System.IO.Path.Combine(dir, $"{baseName}_{i + 1}.jpg"), outMat, jpgParams);
+                            }
                         }
-                        MessageBox.Show($"导出成功（{layoutPages.Count} 张）！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        MessageBox.Show($"导出成功（{layoutPages.Count} 张 JPG）！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     catch (Exception ex)
                     {
@@ -585,14 +624,15 @@ namespace CardCropperNet
 
             var d2 = new SaveFileDialog
             {
-                Filter = "JPEG 图片|*.jpg|PNG 图片|*.png",
-                FileName = $"裁剪_{currentItem?.FileName}"
+                Filter = "JPEG 图片|*.jpg",
+                FileName = $"裁剪_{System.IO.Path.GetFileNameWithoutExtension(currentItem?.FileName)}.jpg"
             };
             if (d2.ShowDialog() == true)
             {
                 try
                 {
-                    CvInvoke.Imwrite(d2.FileName, toExport);
+                    using var outMat = GetPageForOutput(toExport);
+                    CvInvoke.Imwrite(d2.FileName, outMat, jpgParams);
                     MessageBox.Show("导出成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
@@ -608,6 +648,8 @@ namespace CardCropperNet
             var selected = ImageListBox.SelectedItems.Cast<ImageItem>().ToList();
             if (selected.Count == 0) return;
 
+            bool currentRemoved = currentItem != null && selected.Contains(currentItem);
+
             foreach (var item in selected)
             {
                 selectionOrder.Remove(item);
@@ -615,7 +657,23 @@ namespace CardCropperNet
                 imageItems.Remove(item);
             }
             UpdateIndices();
-            // StatusText.Text = $"已删除 {selected.Count} 张，剩余 {imageItems.Count} 张";
+
+            // 🔥 删除后实时刷新预览：若当前预览被删，切到其他未删除的照片
+            if (currentRemoved)
+            {
+                currentItem = null;
+                if (imageItems.Count > 0)
+                {
+                    var next = imageItems[0];
+                    ImageListBox.SelectedItem = next;
+                    currentItem = next;
+                    ShowPreview(next);
+                }
+                else
+                {
+                    PreviewImage.Source = null;
+                }
+            }
         }
 
         private void ClearList_Click(object sender, RoutedEventArgs e)

@@ -202,38 +202,58 @@
                     <!-- 一键裁剪 -->
                     <Button Content="✂️ 一键裁剪" Click="AutoCrop_Click" Background="#4CAF50" Style="{StaticResource ColorActionButton}" Margin="0,0,0,16"/>
 
-                    <!-- 🔥 明暗度调整（移除顶部说明文字） -->
-                    <TextBlock Text="亮部" FontSize="11" Margin="4,4,4,0"/>
-                    <Slider x:Name="HighlightSlider" Minimum="-100" Maximum="100" Value="0"
+                    <!-- 🔥 图像调整：亮度/对比度/阴影/高光 -->
+                    <TextBlock Text="亮度" FontSize="11" Margin="4,4,4,0"/>
+                    <Slider x:Name="BrightnessSlider" Minimum="-100" Maximum="100" Value="0"
                             TickFrequency="10" IsSnapToTickEnabled="True"
                             ValueChanged="AdjustmentSlider_ValueChanged"/>
-                    <TextBlock Text="{Binding ElementName=HighlightSlider, Path=Value}"
+                    <TextBlock Text="{Binding ElementName=BrightnessSlider, Path=Value}"
                                HorizontalAlignment="Center" FontSize="10" Foreground="#888888"/>
 
-                    <TextBlock Text="中间调" FontSize="11" Margin="4,8,4,0"/>
-                    <Slider x:Name="MidtoneSlider" Minimum="-100" Maximum="100" Value="0"
+                    <TextBlock Text="对比度" FontSize="11" Margin="4,8,4,0"/>
+                    <Slider x:Name="ContrastSlider" Minimum="-100" Maximum="100" Value="0"
                             TickFrequency="10" IsSnapToTickEnabled="True"
                             ValueChanged="AdjustmentSlider_ValueChanged"/>
-                    <TextBlock Text="{Binding ElementName=MidtoneSlider, Path=Value}"
+                    <TextBlock Text="{Binding ElementName=ContrastSlider, Path=Value}"
                                HorizontalAlignment="Center" FontSize="10" Foreground="#888888"/>
 
-                    <TextBlock Text="暗部" FontSize="11" Margin="4,8,4,0"/>
+                    <TextBlock Text="阴影" FontSize="11" Margin="4,8,4,0"/>
                     <Slider x:Name="ShadowSlider" Minimum="-100" Maximum="100" Value="0"
                             TickFrequency="10" IsSnapToTickEnabled="True"
                             ValueChanged="AdjustmentSlider_ValueChanged"/>
                     <TextBlock Text="{Binding ElementName=ShadowSlider, Path=Value}"
                                HorizontalAlignment="Center" FontSize="10" Foreground="#888888"/>
 
-                    <Button Content="🔄 重置调整" Click="ResetAdjustments_Click" Margin="0,8,0,8"/>
-                    <Button Content="✔️ 应用调整" Click="ApplyAdjustments_Click" Background="#009688" Style="{StaticResource ColorActionButton}" Margin="0,0,0,20"/>
+                    <TextBlock Text="高光" FontSize="11" Margin="4,8,4,0"/>
+                    <Slider x:Name="HighlightSlider" Minimum="-100" Maximum="100" Value="0"
+                            TickFrequency="10" IsSnapToTickEnabled="True"
+                            ValueChanged="AdjustmentSlider_ValueChanged"/>
+                    <TextBlock Text="{Binding ElementName=HighlightSlider, Path=Value}"
+                               HorizontalAlignment="Center" FontSize="10" Foreground="#888888"/>
+
+                    <!-- 🔥 重置/应用 并排一行（左栏样式） -->
+                    <UniformGrid Columns="2" Margin="0,10,0,20">
+                        <Button Content="🔄 重置调整" Click="ResetAdjustments_Click" Style="{StaticResource LeftBigButton}"/>
+                        <Button Content="✔️ 应用调整" Click="ApplyAdjustments_Click" Style="{StaticResource LeftBigButton}"/>
+                    </UniformGrid>
 
                     <!-- A4 拼版 -->
                     <Button Content="📄 一键拼版" Click="AutoLayout_Click" Background="#1976D2" Style="{StaticResource ColorActionButton}" Margin="0,0,0,16"/>
 
-                    <!-- 导出打印 -->
+                    <!-- 🔥 黑白/彩色 并排一行 -->
+                    <UniformGrid Columns="2" Margin="0,0,0,6">
+                        <RadioButton x:Name="RadioColor" Content="🎨 彩色" IsChecked="True" VerticalAlignment="Center" Margin="4,2"/>
+                        <RadioButton x:Name="RadioGrayscale" Content="⬜ 黑白" VerticalAlignment="Center" Margin="4,2"/>
+                    </UniformGrid>
+
+                    <!-- 打印 -->
                     <Button Content="🖨️ 打印" Click="Print_Click" Background="#F57C00" Style="{StaticResource ColorActionButton}" Margin="0,0,0,10"/>
-                    <Button Content="📄 导出 PDF" Click="ExportPdf_Click" Background="#0277BD" Style="{StaticResource ColorActionButton}" Margin="0,0,0,10"/>
-                    <Button Content="💾 导出图片" Click="ExportImage_Click" Background="#5E35B1" Style="{StaticResource ColorActionButton}"/>
+
+                    <!-- 🔥 导出PDF/JPG 并排一行（左栏样式） -->
+                    <UniformGrid Columns="2">
+                        <Button Content="📄 导出PDF" Click="ExportPdf_Click" Style="{StaticResource LeftBigButton}"/>
+                        <Button Content="🖼️ 导出JPG" Click="ExportImage_Click" Style="{StaticResource LeftBigButton}"/>
+                    </UniformGrid>
                 </StackPanel>
             </ScrollViewer>
         </Border>

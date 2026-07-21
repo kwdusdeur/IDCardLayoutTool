@@ -568,6 +568,13 @@ namespace CardCropperNet
 
             var (tl, tr, br, bl) = (pts[0], pts[1], pts[2], pts[3]);
 
+            // 🔥 轻微向外扩展四角，修复边缘多裁约1mm的问题
+            var cx = (tl.X + tr.X + br.X + bl.X) / 4f;
+            var cy = (tl.Y + tr.Y + br.Y + bl.Y) / 4f;
+            const float expand = 1.010f; // 向外抓1%
+            PointF Ex(PointF p) => new PointF(cx + (p.X - cx) * expand, cy + (p.Y - cy) * expand);
+            tl = Ex(tl); tr = Ex(tr); br = Ex(br); bl = Ex(bl);
+
             double widthA = Distance(br, bl);
             double widthB = Distance(tr, tl);
             int maxWidth = (int)Math.Max(widthA, widthB);
@@ -592,7 +599,90 @@ namespace CardCropperNet
             CvInvoke.WarpPerspective(image, warped, matrix, new Size(maxWidth, maxHeight));
             matrix.Dispose();
 
-            return warped;
+            // 🔥 后处理：自动对比度/亮度 + 圆角清理
+            var cleaned = CleanupCard(warped);
+            if (cleaned != warped) warped.Dispose();
+            return cleaned;
+        }
+
+        // 🔥 后处理：自动对比度拉伸 + 四个圆角填白（更接近复印件）
+        private Mat CleanupCard(Mat card)
+        {
+            if (card.Width < 10 || card.Height < 10) return card;
+
+            // 1) 自动对比度/亮度（LAB 空间对 L 通道做 CLAHE）
+            var outImg = new Mat();
+            try
+            {
+                var lab = new Mat();
+                CvInvoke.CvtColor(card, lab, ColorConversion.Bgr2Lab);
+                var ch = new VectorOfMat();
+                CvInvoke.Split(lab, ch);
+                using (var clahe = new Mat())
+                {
+                    CvInvoke.CLAHE(ch[0], 2.0, new Size(8, 8), ch[0]);
+                }
+                var merged = new Mat();
+                CvInvoke.Merge(ch, merged);
+                CvInvoke.CvtColor(merged, outImg, ColorConversion.Lab2Bgr);
+                lab.Dispose(); ch.Dispose(); merged.Dispose();
+            }
+            catch
+            {
+                outImg.Dispose();
+                outImg = card.Clone();
+            }
+
+            // 2) 四个圆角填白（半径约为短边的6%，接近真实证卡圆角）
+            try
+            {
+                int r = (int)(Math.Min(outImg.Width, outImg.Height) * 0.06);
+                if (r > 2)
+                {
+                    var white = new MCvScalar(255, 255, 255);
+                    int w = outImg.Width, h = outImg.Height;
+                    // 左上
+                    FillCorner(outImg, 0, 0, r, white, true, true);
+                    FillCorner(outImg, w, 0, r, white, false, true);
+                    FillCorner(outImg, 0, h, r, white, true, false);
+                    FillCorner(outImg, w, h, r, white, false, false);
+                }
+            }
+            catch { }
+
+            return outImg;
+        }
+
+        // 填充单个圆角（在角落矩形区域内，圆弧外部填白）
+        private void FillCorner(Mat img, int cornerX, int cornerY, int r, MCvScalar color, bool left, bool top)
+        {
+            int ccx = left ? r : cornerX - r;
+            int ccy = top ? r : cornerY - r;
+            int startX = left ? 0 : cornerX - r;
+            int startY = top ? 0 : cornerY - r;
+            for (int y = 0; y < r; y++)
+            {
+                int py = startY + y;
+                if (py < 0 || py >= img.Height) continue;
+                double dy = py - ccy;
+                // 求该行圆弧内的水平跨度
+                double inside = (double)r * r - dy * dy;
+                if (inside < 0) inside = 0;
+                int halfSpan = (int)Math.Sqrt(inside);
+                // 圆弧外部区域（需填白）
+                if (left)
+                {
+                    int fillTo = ccx - halfSpan; // 从 startX 到 fillTo-1 填白
+                    int w = fillTo - startX;
+                    if (w > 0) CvInvoke.Rectangle(img, new Rectangle(startX, py, w, 1), color, -1);
+                }
+                else
+                {
+                    int fillFrom = ccx + halfSpan;
+                    int w = (startX + r) - fillFrom;
+                    if (w > 0) CvInvoke.Rectangle(img, new Rectangle(fillFrom, py, w, 1), color, -1);
+                }
+            }
         }
 
         private double Distance(Point p1, Point p2)
@@ -629,53 +719,70 @@ namespace CardCropperNet
             }
         }
 
-        public Mat AdjustTones(Mat image, int highlight, int midtone, int shadow)
+        // 🔥 图像调整：亮度/对比度/阴影/高光
+        public Mat AdjustTones(Mat image, int brightness, int contrast, int shadow, int highlight)
         {
-            if (highlight == 0 && midtone == 0 && shadow == 0)
+            if (brightness == 0 && contrast == 0 && shadow == 0 && highlight == 0)
                 return image.Clone();
 
-            var lut = new byte[256];
-            double hi = highlight / 100.0;
-            double mid = midtone / 100.0;
-            double sh = shadow / 100.0;
+            // 先处理亮度/对比度（在BGR上）
+            var work = new Mat();
+            double alpha = 1.0 + contrast / 100.0;   // 对比度系数 0~2
+            double beta = brightness * 1.27;          // 亮度偏移 -127~127
+            CvInvoke.ConvertScaleAbs(image, work, alpha, beta);
 
-            double gamma = Math.Pow(2.0, -mid);
-
-            for (int i = 0; i < 256; i++)
+            // 再处理阴影/高光（在L通道上用LUT）
+            if (shadow != 0 || highlight != 0)
             {
-                double v = i / 255.0;
-                v = Math.Pow(v, gamma);
+                var lut = new byte[256];
+                double sh = shadow / 100.0;
+                double hi = highlight / 100.0;
+                for (int i = 0; i < 256; i++)
+                {
+                    double v = i / 255.0;
+                    double shadowWeight = Math.Pow(1 - v, 2);
+                    v += sh * 0.5 * shadowWeight;
+                    double highWeight = Math.Pow(v, 2);
+                    v += hi * 0.5 * highWeight;
+                    int outv = (int)Math.Round(v * 255);
+                    lut[i] = (byte)Math.Max(0, Math.Min(255, outv));
+                }
 
-                double shadowWeight = Math.Pow(1 - v, 2);
-                v += sh * 0.5 * shadowWeight;
+                var lab = new Mat();
+                CvInvoke.CvtColor(work, lab, ColorConversion.Bgr2Lab);
+                var ch = new VectorOfMat();
+                CvInvoke.Split(lab, ch);
 
-                double highWeight = Math.Pow(v, 2);
-                v += hi * 0.5 * highWeight;
+                using (var lutMat = new Mat(1, 256, DepthType.Cv8U, 1))
+                {
+                    System.Runtime.InteropServices.Marshal.Copy(lut, 0, lutMat.DataPointer, 256);
+                    CvInvoke.LUT(ch[0], lutMat, ch[0]);
+                }
 
-                int outv = (int)Math.Round(v * 255);
-                lut[i] = (byte)Math.Max(0, Math.Min(255, outv));
+                var merged = new Mat();
+                CvInvoke.Merge(ch, merged);
+                var outImg = new Mat();
+                CvInvoke.CvtColor(merged, outImg, ColorConversion.Lab2Bgr);
+
+                lab.Dispose();
+                ch.Dispose();
+                merged.Dispose();
+                work.Dispose();
+                return outImg;
             }
 
-            var lab = new Mat();
-            CvInvoke.CvtColor(image, lab, ColorConversion.Bgr2Lab);
-            var ch = new VectorOfMat();
-            CvInvoke.Split(lab, ch);
+            return work;
+        }
 
-            using (var lutMat = new Mat(1, 256, DepthType.Cv8U, 1))
-            {
-                System.Runtime.InteropServices.Marshal.Copy(lut, 0, lutMat.DataPointer, 256);
-                CvInvoke.LUT(ch[0], lutMat, ch[0]);
-            }
-
-            var merged = new Mat();
-            CvInvoke.Merge(ch, merged);
-            var outImg = new Mat();
-            CvInvoke.CvtColor(merged, outImg, ColorConversion.Lab2Bgr);
-
-            lab.Dispose();
-            ch.Dispose();
-            merged.Dispose();
-            return outImg;
+        // 🔥 转黑白
+        public static Mat ToGrayscale(Mat image)
+        {
+            var gray = new Mat();
+            CvInvoke.CvtColor(image, gray, ColorConversion.Bgr2Gray);
+            var bgr = new Mat();
+            CvInvoke.CvtColor(gray, bgr, ColorConversion.Gray2Bgr);
+            gray.Dispose();
+            return bgr;
         }
     }
 }

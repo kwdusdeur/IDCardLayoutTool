@@ -136,27 +136,13 @@ namespace CardCropperNet
             SetupImage();
         }
 
-        // 鼠标滚轮缩放（以鼠标位置为中心）
-        private void Scroller_MouseWheel(object sender, MouseWheelEventArgs e)
+        // 🔥 鼠标滚轮缩放（PreviewMouseWheel 才能拦截 ScrollViewer 的滚动）
+        private void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            double delta = e.Delta > 0 ? 1.1 : 0.9;
+            double delta = e.Delta > 0 ? 1.15 : 1.0 / 1.15;
             double newZoom = currentZoom * delta;
-            newZoom = Math.Max(0.3, Math.Min(5.0, newZoom));
-
-            var mousePos = e.GetPosition(CropCanvas);
-            var centerX = mousePos.X / currentZoom;
-            var centerY = mousePos.Y / currentZoom;
-
-            currentZoom = newZoom;
-            CanvasScale.ScaleX = currentZoom;
-            CanvasScale.ScaleY = currentZoom;
-
-            // 调整 ScrollViewer 滚动位置，保持鼠标位置不变
-            var newX = centerX * currentZoom - mousePos.X;
-            var newY = centerY * currentZoom - mousePos.Y;
-            ImageScroller.ScrollToHorizontalOffset(newX);
-            ImageScroller.ScrollToVerticalOffset(newY);
-
+            newZoom = Math.Max(0.3, Math.Min(8.0, newZoom));
+            ApplyZoom(newZoom);
             e.Handled = true;
         }
 
@@ -271,10 +257,13 @@ namespace CardCropperNet
             ZoomText.Text = $"{(int)(currentZoom * 100)}%";
         }
 
-        // 🔥 鼠标中键或Ctrl+左键拖动平移
+        // 🔥 抓手工具或Ctrl+左键拖动平移
         private void Scroller_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl) || e.MiddleButton == MouseButtonState.Pressed)
+            bool panMode = (PanToggle.IsChecked == true) ||
+                           Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl) ||
+                           e.MiddleButton == MouseButtonState.Pressed;
+            if (panMode)
             {
                 isPanning = true;
                 lastPanPoint = e.GetPosition(ImageScroller);

@@ -20,12 +20,13 @@
             <Button Content="🔍 放大" Click="ZoomIn_Click" Padding="12,6" Margin="4"/>
             <Button Content="🔍 缩小" Click="ZoomOut_Click" Padding="12,6" Margin="4"/>
             <Button Content="↔️ 适应窗口" Click="ZoomFit_Click" Padding="12,6" Margin="4"/>
+            <ToggleButton x:Name="PanToggle" Content="✋ 抓手" Padding="12,6" Margin="4" VerticalAlignment="Center"/>
             <TextBlock x:Name="ZoomText" Text="100%" VerticalAlignment="Center" Margin="8,0" FontWeight="Bold"/>
         </StackPanel>
 
         <Border Grid.Row="1" Background="#9E9E9E" Margin="12">
             <ScrollViewer x:Name="ImageScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          MouseWheel="Scroller_MouseWheel"
+                          PreviewMouseWheel="Scroller_PreviewMouseWheel"
                           PreviewMouseLeftButtonDown="Scroller_PreviewMouseLeftButtonDown"
                           PreviewMouseMove="Scroller_PreviewMouseMove"
                           PreviewMouseLeftButtonUp="Scroller_PreviewMouseLeftButtonUp">

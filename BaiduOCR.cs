@@ -169,6 +169,102 @@ namespace CardCropperNet
             }
         }
 
+        // 🔥 通用卡证识别（银行卡/驾驶证/护照）：百度定位 + 本地透视纠正
+        // cardType: 银行卡/驾驶证/护照
+        public static async Task<(Mat? croppedImage, double confidence)> RecognizeGenericCard(Mat image, string cardType, CardCropper? localCropper)
+        {
+            try
+            {
+                string endpoint = cardType switch
+                {
+                    "银行卡" => "bankcard",
+                    "驾驶证" => "driving_license",
+                    "护照" => "passport",
+                    _ => ""
+                };
+                if (endpoint == "") return (null, 0);
+
+                Console.WriteLine($"🌐 调用百度{cardType}识别API ({endpoint})...");
+                var token = await GetAccessToken();
+                var base64 = MatToBase64(image);
+
+                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                var url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/{endpoint}?access_token={token}";
+                var body = $"image={Uri.EscapeDataString(base64)}&detect_direction=true";
+                var content = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
+
+                var response = await client.PostAsync(url, content);
+                var result = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"百度{cardType}响应前200: {result.Substring(0, Math.Min(200, result.Length))}");
+
+                var json = JsonDocument.Parse(result);
+                if (json.RootElement.TryGetProperty("error_code", out var errCode))
+                {
+                    Console.WriteLine($"⚠️ 百度{cardType}无法识别 [{errCode}]，降级本地");
+                    return (null, 0);
+                }
+
+                // 提取卡片位置（仅银行卡返回result.location）
+                JsonElement loc = default;
+                bool hasLoc = false;
+                if (endpoint == "bankcard" &&
+                    json.RootElement.TryGetProperty("result", out var bankResult) &&
+                    bankResult.TryGetProperty("location", out loc))
+                {
+                    hasLoc = true;
+                }
+
+                if (hasLoc)
+                {
+                    int left = loc.GetProperty("left").GetInt32();
+                    int top = loc.GetProperty("top").GetInt32();
+                    int width = loc.GetProperty("width").GetInt32();
+                    int height = loc.GetProperty("height").GetInt32();
+
+                    left = Math.Max(0, left);
+                    top = Math.Max(0, top);
+                    width = Math.Min(width, image.Width - left);
+                    height = Math.Min(height, image.Height - top);
+                    if (width < 50 || height < 50) return (null, 0);
+
+                    var rect = new System.Drawing.Rectangle(left, top, width, height);
+                    var roughCrop = new Mat(image, rect);
+                    Console.WriteLine($"✅ 百度{cardType}矩形裁剪: {roughCrop.Width}x{roughCrop.Height}");
+
+                    Mat? finalCrop;
+                    double finalConf = 0.90;
+                    if (localCropper != null)
+                    {
+                        var (pc, pconf) = localCropper.CropCard(roughCrop);
+                        if (pc != null && pconf > 0.3) { finalCrop = pc; finalConf = 0.95; }
+                        else { pc?.Dispose(); finalCrop = roughCrop.Clone(); }
+                    }
+                    else { finalCrop = roughCrop.Clone(); }
+                    roughCrop.Dispose();
+
+                    if (finalCrop != null && finalCrop.Height > finalCrop.Width)
+                    {
+                        var rot = new Mat();
+                        CvInvoke.Rotate(finalCrop, rot, Emgu.CV.CvEnum.RotateFlags.Rotate90Clockwise);
+                        finalCrop.Dispose(); finalCrop = rot;
+                    }
+                    Console.WriteLine($"✅ 百度{cardType}最终结果: {finalCrop?.Width}x{finalCrop?.Height}");
+                    return (finalCrop, finalConf);
+                }
+                else
+                {
+                    // 百度识别成功但无整卡location（驾驶证/护照），降级本地
+                    Console.WriteLine($"ℹ️ 百度识别到{cardType}但无整卡坐标，降级本地");
+                    return (null, 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ 百度{cardType}异常: {ex.Message}");
+                return (null, 0);
+            }
+        }
+
         // Mat转Base64
         private static string MatToBase64(Mat mat)
         {
