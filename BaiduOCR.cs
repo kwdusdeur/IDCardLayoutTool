@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Emgu.CV;
-using System.Windows;
 
 namespace CardCropperNet
 {
@@ -29,28 +28,26 @@ namespace CardCropperNet
             
             accessToken = json.RootElement.GetProperty("access_token").GetString();
             var expiresIn = json.RootElement.GetProperty("expires_in").GetInt32();
-            tokenExpiry = DateTime.Now.AddSeconds(expiresIn - 600); // 提前10分钟刷新
+            tokenExpiry = DateTime.Now.AddSeconds(expiresIn - 600);
             
             Console.WriteLine($"✅ 百度OCR Token已获取，有效期{expiresIn}秒");
             return accessToken!;
         }
 
-        // 身份证识别（带裁剪）
-        public static async Task<(Mat? croppedImage, double confidence)> RecognizeIdCard(Mat image, string side = "front")
+        // 🔥 身份证混贴识别（返回精确卡片位置）
+        public static async Task<(Mat? croppedImage, double confidence)> RecognizeIdCard(Mat image)
         {
             try
             {
-                Console.WriteLine($"🌐 调用百度OCR识别身份证...");
+                Console.WriteLine($"🌐 调用百度身份证混贴识别API...");
                 var token = await GetAccessToken();
                 var base64 = MatToBase64(image);
 
                 using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                
-                // 🔥 使用通用文字识别（高精度版）获取文字位置
-                var url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token={token}";
+                var url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/multi_idcard?access_token={token}";
 
                 var content = new StringContent(
-                    $"image={Uri.EscapeDataString(base64)}&detect_direction=true&probability=true",
+                    $"image={Uri.EscapeDataString(base64)}&detect_direction=true",
                     Encoding.UTF8,
                     "application/x-www-form-urlencoded"
                 );
@@ -58,11 +55,11 @@ namespace CardCropperNet
                 var response = await client.PostAsync(url, content);
                 var result = await response.Content.ReadAsStringAsync();
                 
-                Console.WriteLine($"百度API响应: {result.Substring(0, Math.Min(200, result.Length))}...");
+                Console.WriteLine($"百度API响应前200字符: {result.Substring(0, Math.Min(200, result.Length))}...");
                 
                 var json = JsonDocument.Parse(result);
 
-                // 检查是否有错误
+                // 检查错误
                 if (json.RootElement.TryGetProperty("error_code", out var errCode))
                 {
                     var errMsg = json.RootElement.TryGetProperty("error_msg", out var msg) ? msg.GetString() : "未知错误";
@@ -70,74 +67,71 @@ namespace CardCropperNet
                     return (null, 0);
                 }
 
-                // 提取所有文字区域的边界框
-                if (json.RootElement.TryGetProperty("words_result", out var words) && words.GetArrayLength() > 0)
+                // 提取第一张身份证的位置
+                if (json.RootElement.TryGetProperty("words_result", out var results) && results.GetArrayLength() > 0)
                 {
-                    int minX = int.MaxValue, minY = int.MaxValue;
-                    int maxX = 0, maxY = 0;
-                    double totalProb = 0;
-                    int count = 0;
-
-                    foreach (var word in words.EnumerateArray())
+                    var first = results[0];
+                    if (first.TryGetProperty("card_info", out var cardInfo))
                     {
-                        if (word.TryGetProperty("location", out var loc))
+                        var cardType = cardInfo.TryGetProperty("card_type", out var ct) ? ct.GetString() : "unknown";
+                        var imageStatus = cardInfo.TryGetProperty("image_status", out var ist) ? ist.GetString() : "unknown";
+                        
+                        // 非身份证类型
+                        if (cardType == null || (!cardType.StartsWith("idcard_")))
+                        {
+                            Console.WriteLine($"⚠️ 百度检测到非身份证类型: {cardType}");
+                            return (null, 0);
+                        }
+
+                        // 图片状态异常
+                        if (imageStatus != "normal" && imageStatus != "reversed_side")
+                        {
+                            Console.WriteLine($"⚠️ 百度检测图片状态异常: {imageStatus}");
+                            return (null, 0);
+                        }
+
+                        // 提取卡片位置
+                        if (cardInfo.TryGetProperty("card_location", out var loc))
                         {
                             int left = loc.GetProperty("left").GetInt32();
                             int top = loc.GetProperty("top").GetInt32();
                             int width = loc.GetProperty("width").GetInt32();
                             int height = loc.GetProperty("height").GetInt32();
 
-                            minX = Math.Min(minX, left);
-                            minY = Math.Min(minY, top);
-                            maxX = Math.Max(maxX, left + width);
-                            maxY = Math.Max(maxY, top + height);
-                        }
+                            // 检查坐标合理性
+                            if (left < 0 || top < 0 || width < 50 || height < 50 || 
+                                left + width > image.Width || top + height > image.Height)
+                            {
+                                Console.WriteLine($"⚠️ 百度返回坐标异常: L={left},T={top},W={width},H={height}");
+                                return (null, 0);
+                            }
 
-                        if (word.TryGetProperty("probability", out var prob))
+                            // 裁剪
+                            var rect = new System.Drawing.Rectangle(left, top, width, height);
+                            var cropped = new Mat(image, rect).Clone();
+
+                            // 自动旋转：身份证应该是横向的
+                            if (cropped.Height > cropped.Width)
+                            {
+                                var rotated = new Mat();
+                                CvInvoke.Rotate(cropped, rotated, Emgu.CV.CvEnum.RotateFlags.Rotate90Clockwise);
+                                cropped.Dispose();
+                                cropped = rotated;
+                            }
+
+                            // 置信度：百度检测到身份证=高置信度
+                            double confidence = 0.95;
+                            Console.WriteLine($"✅ 百度OCR识别成功: 类型={cardType}, 状态={imageStatus}, 尺寸={cropped.Width}x{cropped.Height}");
+                            return (cropped, confidence);
+                        }
+                        else
                         {
-                            totalProb += prob.GetProperty("average").GetDouble();
-                            count++;
+                            Console.WriteLine($"⚠️ 百度API未返回card_location");
                         }
-                    }
-
-                    if (count > 0)
-                    {
-                        // 扩展边距15%（留白）
-                        int marginX = (int)((maxX - minX) * 0.15);
-                        int marginY = (int)((maxY - minY) * 0.15);
-
-                        minX = Math.Max(0, minX - marginX);
-                        minY = Math.Max(0, minY - marginY);
-                        maxX = Math.Min(image.Width, maxX + marginX);
-                        maxY = Math.Min(image.Height, maxY + marginY);
-
-                        var rect = new System.Drawing.Rectangle(minX, minY, maxX - minX, maxY - minY);
-                        
-                        // 检查裁剪区域是否合理
-                        if (rect.Width < 50 || rect.Height < 50 || rect.Width > image.Width * 0.95 || rect.Height > image.Height * 0.95)
-                        {
-                            Console.WriteLine($"⚠️ 百度OCR裁剪区域不合理: {rect.Width}x{rect.Height}");
-                            return (null, 0);
-                        }
-
-                        var cropped = new Mat(image, rect).Clone();
-
-                        // 横向检查：身份证应该是横向的
-                        if (cropped.Height > cropped.Width)
-                        {
-                            var rotated = new Mat();
-                            CvInvoke.Rotate(cropped, rotated, Emgu.CV.CvEnum.RotateFlags.Rotate90Clockwise);
-                            cropped.Dispose();
-                            cropped = rotated;
-                        }
-
-                        double confidence = totalProb / count;
-                        Console.WriteLine($"✅ 百度OCR识别成功: {cropped.Width}x{cropped.Height}, 置信度={confidence:F2}");
-                        return (cropped, confidence);
                     }
                 }
 
-                Console.WriteLine($"⚠️ 百度OCR未检测到文字区域");
+                Console.WriteLine($"⚠️ 百度API未检测到身份证");
                 return (null, 0);
             }
             catch (Exception ex)
