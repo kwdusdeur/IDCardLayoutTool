@@ -240,8 +240,23 @@ namespace CardCropperNet
                     double confidence = 0;
                     string method = "";
 
-                    // 🔥 第1层：百度OCR（身份证专用）
-                    if (RadioIdCard.IsChecked == true)
+                    // 🔥 第1层：腾讯云OCR（直接返回矫正裁剪图，效果最好）
+                    string cardTypeName = RadioIdCard.IsChecked == true ? "身份证" :
+                                          RadioBankCard.IsChecked == true ? "银行卡" :
+                                          RadioDriverLicense?.IsChecked == true ? "驾驶证" :
+                                          RadioPassport?.IsChecked == true ? "护照" : "身份证";
+
+                    var (tencentResult, tencentConf) = await TencentOCR.RecognizeCard(mat, cardTypeName);
+                    if (tencentResult != null && tencentConf > 0.6)
+                    {
+                        croppedMat = tencentResult;
+                        confidence = tencentConf;
+                        method = "腾讯云OCR";
+                        baiduCount++;
+                    }
+
+                    // 🔥 第2层：百度OCR（腾讯失败时降级）
+                    if (croppedMat == null && RadioIdCard.IsChecked == true)
                     {
                         var (baiduResult, baiduConf) = await BaiduOCR.RecognizeIdCard(mat, cropper);
                         if (baiduResult != null && baiduConf > 0.6)
@@ -252,8 +267,7 @@ namespace CardCropperNet
                             baiduCount++;
                         }
                     }
-                    // 🔥 第1层：百度通用卡证识别（银行卡/驾驶证/护照）
-                    else
+                    else if (croppedMat == null)
                     {
                         string gType = RadioBankCard.IsChecked == true ? "银行卡" :
                                        RadioDriverLicense?.IsChecked == true ? "驾驶证" :
@@ -271,7 +285,7 @@ namespace CardCropperNet
                         }
                     }
 
-                    // 🔥 第2层：本地OpenCV（降级方案）
+                    // 🔥 第3层：本地OpenCV（降级方案）
                     if (croppedMat == null && cropper != null)
                     {
                         var (localResult, localConf) = cropper.CropCard(mat);
