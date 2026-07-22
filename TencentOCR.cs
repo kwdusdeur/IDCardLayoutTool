@@ -23,9 +23,15 @@ namespace CardCropperNet
             catch { }
             Console.WriteLine(msg);
         }
-        // 拆分存储避免被代码托管平台的密钥扫描拦截（自用工具，建议定期轮换）
-        private static readonly string SECRET_ID = "AKID" + "W2PgjZBZHn2B7sSuFQ" + "ayx42pQrERL7DG";
-        private static readonly string SECRET_KEY = "wfBVcW" + "FVaS6XUGqDMHyRg" + "iXJ6iT7Ypvp";
+        // 🔥 改为从配置文件读取（不再硬编码）
+        private static string? _secretId;
+        private static string? _secretKey;
+
+        public static void InitConfig(AppConfig config)
+        {
+            _secretId = config.TencentSecretId;
+            _secretKey = config.TencentSecretKey;
+        }
         private const string HOST = "ocr.tencentcloudapi.com";
         private const string SERVICE = "ocr";
         private const string REGION = "ap-guangzhou";
@@ -34,6 +40,13 @@ namespace CardCropperNet
         // 🔥 根据证件类型识别并返回矫正裁剪图
         public static async Task<(Mat? croppedImage, double confidence)> RecognizeCard(Mat image, string cardType)
         {
+            // 🔥 配置检查
+            if (string.IsNullOrWhiteSpace(_secretId) || string.IsNullOrWhiteSpace(_secretKey))
+            {
+                Log("⏩ 跳过腾讯OCR（原因：配置缺失）");
+                return (null, 0);
+            }
+
             try
             {
                 Log($"🌐 开始调用腾讯云OCR：{cardType}，图像尺寸 {image.Width}x{image.Height}");
@@ -182,12 +195,12 @@ namespace CardCropperNet
             var hashedCr = Sha256Hex(canonicalRequest);
             var strToSign = $"{algo}\n{ts}\n{credScope}\n{hashedCr}";
 
-            var secDate = HmacSha256(Encoding.UTF8.GetBytes("TC3" + SECRET_KEY), date);
+            var secDate = HmacSha256(Encoding.UTF8.GetBytes("TC3" + _secretKey), date);
             var secService = HmacSha256(secDate, SERVICE);
             var secSigning = HmacSha256(secService, "tc3_request");
             var signature = ToHex(HmacSha256(secSigning, strToSign));
 
-            var auth = $"{algo} Credential={SECRET_ID}/{credScope}, SignedHeaders={signedHeaders}, Signature={signature}";
+            var auth = $"{algo} Credential={_secretId}/{credScope}, SignedHeaders={signedHeaders}, Signature={signature}";
 
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             using var req = new HttpRequestMessage(HttpMethod.Post, $"https://{HOST}/");

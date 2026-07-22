@@ -147,6 +147,7 @@
                 <Button Content="🗑️ 删除" Click="RemoveImage_Click" Style="{StaticResource LeftBigButton}"/>
                 <Button Content="🔄 清空" Click="ClearList_Click" Style="{StaticResource LeftBigButton}"/>
             </UniformGrid>
+            <Button Grid.Row="4" Content="⚙️ 设置" Click="Settings_Click" Style="{StaticResource LeftBigButton}" Margin="0,6,0,0"/>
         </Grid>
 
         <!-- 中间：预览区 -->

@@ -26,6 +26,7 @@ namespace CardCropperNet
         private ImageItem? currentItem;
         private List<Mat> layoutPages = new List<Mat>();
         private int currentPageIndex = 0;
+        private AppConfig config;
 
         private bool isDragging = false;
         private int dragStartIndex = -1;
@@ -43,6 +44,10 @@ namespace CardCropperNet
             InitializeComponent();
             ImageListBox.ItemsSource = imageItems;
             cropper = new CardCropper("身份证");
+
+            // 🔥 加载配置并初始化腾讯 OCR
+            config = AppConfig.Load();
+            TencentOCR.InitConfig(config);
 
             RadioIdCard.Checked += (s, e) => cropper = new CardCropper("身份证");
             RadioBankCard.Checked += (s, e) => cropper = new CardCropper("银行卡");
@@ -714,6 +719,16 @@ namespace CardCropperNet
             // CropStatusText.Text = "";
             PageInfoText.Text = "";
             ClearLayoutPages();
+        }
+
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsWin = new SettingsWindow(config) { Owner = this };
+            if (settingsWin.ShowDialog() == true)
+            {
+                // 配置已在 SettingsWindow 里保存并应用了
+                TencentOCR.Log("用户更新了配置");
+            }
         }
 
         private void ClearLayoutPages()
