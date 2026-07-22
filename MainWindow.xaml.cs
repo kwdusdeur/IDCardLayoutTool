@@ -253,6 +253,11 @@ namespace CardCropperNet
                         confidence = tencentConf;
                         method = "腾讯云OCR";
                         baiduCount++;
+                        TencentOCR.Log($"✅✅ 本张使用腾讯云OCR成功 ({cardTypeName})");
+                    }
+                    else
+                    {
+                        TencentOCR.Log($"⚠️ 腾讯未返回有效裁剪图（{cardTypeName}），将降级百度/本地");
                     }
 
                     // 🔥 第2层：百度OCR（腾讯失败时降级）
@@ -345,6 +350,7 @@ namespace CardCropperNet
                 if (manualCount > 0) summary += $"\n✋ 手动裁剪：{manualCount} 张";
                 if (failCount > 0) summary += $"\n❌ 跳过：{failCount} 张";
                 // CropStatusText.Text = summary;
+                TencentOCR.Log($"===== 裁剪汇总：云端{baiduCount} 本地{opencvCount} 手动{manualCount} 跳过{failCount} =====");
 
                 if (currentItem != null) ShowPreview(currentItem);
             }

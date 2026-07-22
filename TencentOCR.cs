@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -11,6 +12,17 @@ namespace CardCropperNet
     // 🔥 腾讯云 OCR：直接返回裁剪+矫正后的证件图（TC3-HMAC-SHA256 签名）
     public class TencentOCR
     {
+        // 🔥 日志写到 EXE 旁边的 裁剪日志.txt，方便排查（无需PowerShell）
+        public static void Log(string msg)
+        {
+            try
+            {
+                var path = Path.Combine(AppContext.BaseDirectory, "裁剪日志.txt");
+                File.AppendAllText(path, $"[{DateTime.Now:HH:mm:ss}] {msg}\n");
+            }
+            catch { }
+            Console.WriteLine(msg);
+        }
         // 拆分存储避免被代码托管平台的密钥扫描拦截（自用工具，建议定期轮换）
         private static readonly string SECRET_ID = "AKID" + "W2PgjZBZHn2B7sSuFQ" + "ayx42pQrERL7DG";
         private static readonly string SECRET_KEY = "wfBVcW" + "FVaS6XUGqDMHyRg" + "iXJ6iT7Ypvp";
@@ -24,7 +36,7 @@ namespace CardCropperNet
         {
             try
             {
-                Console.WriteLine($"🌐 调用腾讯云OCR：{cardType}...");
+                Log($"🌐 开始调用腾讯云OCR：{cardType}，图像尺寸 {image.Width}x{image.Height}");
                 var base64 = MatToBase64(image);
 
                 // 各证件类型对应的 Action 与提取裁剪图的方式
@@ -44,7 +56,8 @@ namespace CardCropperNet
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ 腾讯OCR异常: {ex.Message}");
+                Log($"❌ 腾讯OCR异常: {ex.GetType().Name}: {ex.Message}");
+                if (ex.InnerException != null) Log($"   内部异常: {ex.InnerException.Message}");
                 return (null, 0);
             }
         }
@@ -60,7 +73,7 @@ namespace CardCropperNet
             var root = doc.RootElement.GetProperty("Response");
             if (root.TryGetProperty("Error", out var err))
             {
-                Console.WriteLine($"⚠️ 腾讯身份证错误: {err.GetProperty("Message").GetString()}");
+                Log($"⚠️ 腾讯身份证错误: {err.GetProperty("Message").GetString()}");
                 return (null, 0);
             }
             if (root.TryGetProperty("AdvancedInfo", out var adv))
@@ -76,13 +89,13 @@ namespace CardCropperNet
                         {
                             var mat = Base64ToMat(cropB64);
                             var final = AutoRotateLandscape(mat);
-                            Console.WriteLine($"✅ 腾讯身份证裁剪图: {final.Width}x{final.Height}");
+                            Log($"✅ 腾讯身份证裁剪图: {final.Width}x{final.Height}");
                             return (final, 0.95);
                         }
                     }
                 }
             }
-            Console.WriteLine("⚠️ 腾讯身份证未返回裁剪图");
+            Log("⚠️ 腾讯身份证未返回裁剪图");
             return (null, 0);
         }
 
@@ -97,7 +110,7 @@ namespace CardCropperNet
             var root = doc.RootElement.GetProperty("Response");
             if (root.TryGetProperty("Error", out var err))
             {
-                Console.WriteLine($"⚠️ 腾讯银行卡错误: {err.GetProperty("Message").GetString()}");
+                Log($"⚠️ 腾讯银行卡错误: {err.GetProperty("Message").GetString()}");
                 return (null, 0);
             }
             if (root.TryGetProperty("BorderCutImage", out var cut))
@@ -107,11 +120,11 @@ namespace CardCropperNet
                 {
                     var mat = Base64ToMat(cropB64);
                     var final = AutoRotateLandscape(mat);
-                    Console.WriteLine($"✅ 腾讯银行卡裁剪图: {final.Width}x{final.Height}");
+                    Log($"✅ 腾讯银行卡裁剪图: {final.Width}x{final.Height}");
                     return (final, 0.95);
                 }
             }
-            Console.WriteLine("⚠️ 腾讯银行卡未返回裁剪图");
+            Log("⚠️ 腾讯银行卡未返回裁剪图");
             return (null, 0);
         }
 
@@ -126,11 +139,11 @@ namespace CardCropperNet
             var root = doc.RootElement.GetProperty("Response");
             if (root.TryGetProperty("Error", out var err))
             {
-                Console.WriteLine($"⚠️ 腾讯驾驶证错误: {err.GetProperty("Message").GetString()}，降级本地");
+                Log($"⚠️ 腾讯驾驶证错误: {err.GetProperty("Message").GetString()}，降级本地");
                 return (null, 0);
             }
             // 驾驶证接口无裁剪图返回，降级本地
-            Console.WriteLine("ℹ️ 腾讯驾驶证识别成功但无裁剪图，降级本地");
+            Log("ℹ️ 腾讯驾驶证识别成功但无裁剪图，降级本地");
             return (null, 0);
         }
 
@@ -145,10 +158,10 @@ namespace CardCropperNet
             var root = doc.RootElement.GetProperty("Response");
             if (root.TryGetProperty("Error", out var err))
             {
-                Console.WriteLine($"⚠️ 腾讯护照错误: {err.GetProperty("Message").GetString()}，降级本地");
+                Log($"⚠️ 腾讯护照错误: {err.GetProperty("Message").GetString()}，降级本地");
                 return (null, 0);
             }
-            Console.WriteLine("ℹ️ 腾讯护照识别成功但无裁剪图，降级本地");
+            Log("ℹ️ 腾讯护照识别成功但无裁剪图，降级本地");
             return (null, 0);
         }
 
@@ -190,7 +203,7 @@ namespace CardCropperNet
 
             var response = await client.SendAsync(req);
             var result = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"腾讯{action}响应前150: {result.Substring(0, Math.Min(150, result.Length))}");
+            Log($"腾讯{action} HTTP {(int)response.StatusCode}, 响应前200: {result.Substring(0, Math.Min(200, result.Length))}");
             return result;
         }
 
