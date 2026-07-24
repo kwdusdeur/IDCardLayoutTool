@@ -28,6 +28,35 @@ namespace CardCropperNet
 
         public (Mat?, double) CropCard(Mat image)
         {
+            // 🔥 首选：DocAligner AI 四角检测 + 原图透视矫正（离线，画质最佳）
+            try
+            {
+                var ai = AiCornerDetector.Instance;
+                if (ai.Available)
+                {
+                    var det = ai.DetectCorners(image);
+                    if (det.HasValue && det.Value.confidence >= 0.5)
+                    {
+                        var warpedAi = PerspectiveTransformSmart(image, det.Value.corners);
+                        var enhancedAi = EnhanceLighting(warpedAi);
+                        if (enhancedAi != warpedAi) warpedAi.Dispose();
+                        Console.WriteLine($"✅ AI裁剪成功, 置信度: {det.Value.confidence:F2}");
+                        TencentOCR.Log($"✅ AI裁剪成功, 置信度: {det.Value.confidence:F2}");
+                        return (enhancedAi, det.Value.confidence);
+                    }
+                    TencentOCR.Log("ℹ️ AI置信度不足，降级传统边缘检测");
+                }
+            }
+            catch (Exception ex)
+            {
+                TencentOCR.Log($"⚠️ AI裁剪异常，降级传统方法: {ex.Message}");
+            }
+
+            return CropCardTraditional(image);
+        }
+
+        public (Mat?, double) CropCardTraditional(Mat image)
+        {
             try
             {
                 // 🔥 7种裁剪策略，从强到弱依次尝试
@@ -455,6 +484,92 @@ namespace CardCropperNet
             }
 
             return (null, 0);
+        }
+
+        // 🔥 智能透视矫正：把原图卡片 warp 到精确的标准尺寸（300DPI），自动判断横竖
+        private Mat PerspectiveTransformSmart(Mat src, PointF[] srcCorners)
+        {
+            // 标准尺寸（毫米→300DPI像素）
+            (double wMm, double hMm) = cardType switch
+            {
+                "身份证" => (85.6, 54.0),
+                "银行卡" => (85.6, 53.98),
+                "驾驶证" => (85.6, 54.0),
+                "护照" => (125.0, 88.0),
+                _ => (85.6, 54.0)
+            };
+            const double dpi = 300.0;
+            float stdW = (float)(wMm * dpi / 25.4);
+            float stdH = (float)(hMm * dpi / 25.4);
+
+            var tl = srcCorners[0]; var tr = srcCorners[1];
+            var br = srcCorners[2]; var bl = srcCorners[3];
+
+            // 检测源四边形是横还是竖
+            float srcW = (float)((Distance(tl, tr) + Distance(bl, br)) / 2.0);
+            float srcH = (float)((Distance(tl, bl) + Distance(tr, br)) / 2.0);
+            bool srcLandscape = srcW > srcH;
+            bool stdLandscape = stdW > stdH;
+
+            float targetW, targetH;
+            bool needRotate = false;
+            if (srcLandscape == stdLandscape)
+            {
+                targetW = stdW; targetH = stdH;
+            }
+            else
+            {
+                targetW = stdH; targetH = stdW;
+                needRotate = true;
+            }
+
+            var dst = new PointF[]
+            {
+                new PointF(0, 0),
+                new PointF(targetW, 0),
+                new PointF(targetW, targetH),
+                new PointF(0, targetH)
+            };
+
+            var matrix = CvInvoke.GetPerspectiveTransform(new[] { tl, tr, br, bl }, dst);
+            var warped = new Mat();
+            CvInvoke.WarpPerspective(src, warped, matrix, new Size((int)targetW, (int)targetH), Inter.Linear);
+            matrix.Dispose();
+
+            if (needRotate)
+            {
+                var rot = new Mat();
+                CvInvoke.Rotate(warped, rot, RotateFlags.Rotate90CounterClockwise);
+                warped.Dispose();
+                return rot;
+            }
+            return warped;
+        }
+
+        // 🔥 温和明暗纠正：LAB 空间只对 L 亮度通道做 CLAHE，不动颜色（避免偏色）
+        private Mat EnhanceLighting(Mat src)
+        {
+            try
+            {
+                var lab = new Mat();
+                CvInvoke.CvtColor(src, lab, ColorConversion.Bgr2Lab);
+                var ch = new VectorOfMat();
+                CvInvoke.Split(lab, ch);
+                var lOut = new Mat();
+                CvInvoke.CLAHE(ch[0], 2.0, new Size(8, 8), lOut);
+                lOut.CopyTo(ch[0]);
+                CvInvoke.Merge(ch, lab);
+                var outImg = new Mat();
+                CvInvoke.CvtColor(lab, outImg, ColorConversion.Lab2Bgr);
+                lOut.Dispose();
+                ch.Dispose();
+                lab.Dispose();
+                return outImg;
+            }
+            catch
+            {
+                return src;
+            }
         }
 
         private (Mat, double) FallbackCrop(Mat image)
